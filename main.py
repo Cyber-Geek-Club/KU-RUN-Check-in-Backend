@@ -1,9 +1,13 @@
 from fastapi import FastAPI
-from app.api import routes_user
-from app.core.database import Base, engine
+from src.api.endpoints import tasks
+from src.database.db_config import init_db
 
-Base.metadata.create_all(bind=engine)
+app = FastAPI(title="My API Project")
 
-app = FastAPI()
+# Initialize database connection
+@app.on_event("startup")
+async def on_startup():
+    await init_db()
 
-app.include_router(routes_user.router)
+# Include endpoints
+app.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
