@@ -12,6 +12,10 @@ SessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 async def init_db():
     async with engine.begin() as conn:
-        # Import models here to ensure they’re registered
-        from src.models import task
-        await conn.run_sync(task.Base.metadata.create_all)
+        # Import all models to ensure they're registered
+        from src.models import (
+            Base, User, Event, EventParticipation, 
+            Reward, UserReward, PasswordResetLog
+        )
+        await conn.run_sync(Base.metadata.create_all)
+
