@@ -3,8 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from src.database.db_config import SessionLocal
 from src.crud import user_crud
-from src.schemas.user_schema import UserCreate, UserUpdate, UserRead, UserLogin
+from src.schemas.user_schema import (
+    UserCreate, UserUpdate, UserRead, UserLogin,
+    PasswordReset, PasswordResetConfirm
+)
 from src.models.user import User
+from src.services.email_service import send_verification_email, send_password_reset_email
 from typing import List
 
 router = APIRouter()
@@ -18,9 +22,9 @@ async def get_db():
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     """
-    Register a new user
+    Register a new user and send verification email
 
-    สมัครสมาชิกใหม่ (นิสิต, เจ้าหน้าที่, Staff, Organizer)
+    สมัครสมาชิกใหม่และส่งอีเมลยืนยัน
     """
     # Check if email already exists
     existing_user = await user_crud.get_user_by_email(db, user.email)
@@ -41,7 +45,73 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
                 detail="Nisit ID already registered"
             )
 
-    return await user_crud.create_user(db, user)
+    # Create user
+    new_user = await user_crud.create_user(db, user)
+
+    # Send verification email
+    email_sent = send_verification_email(
+        new_user.email,
+        new_user.verification_token,
+        new_user.name
+    )
+
+    if not email_sent:
+        print(f"Warning: Failed to send verification email to {new_user.email}")
+
+    return new_user
+
+
+@router.get("/verify-email")
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    """
+    Verify user's email using token from email
+
+    ยืนยันอีเมลด้วย token ที่ได้รับทางอีเมล
+    """
+    user = await user_crud.verify_user_email(db, token)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token"
+        )
+
+    return {
+        "message": "Email verified successfully",
+        "user_id": user.id,
+        "email": user.email
+    }
+
+
+@router.post("/resend-verification")
+async def resend_verification(email: str, db: AsyncSession = Depends(get_db)):
+    """
+    Resend verification email
+
+    ส่งอีเมลยืนยันใหม่อีกครั้ง
+    """
+    user = await user_crud.resend_verification_email(db, email)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found or already verified"
+        )
+
+    # Send new verification email
+    email_sent = send_verification_email(
+        user.email,
+        user.verification_token,
+        user.name
+    )
+
+    if not email_sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send verification email"
+        )
+
+    return {"message": "Verification email sent"}
 
 
 @router.post("/login")
@@ -61,7 +131,7 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     if not user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email not verified"
+            detail="Email not verified. Please check your email for verification link."
         )
 
     # TODO: Generate JWT token
@@ -72,6 +142,46 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
         "name": user.name,
         "role": user.role
     }
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: PasswordReset, db: AsyncSession = Depends(get_db)):
+    """
+    Request password reset
+
+    ขอรีเซ็ตรหัสผ่าน
+    """
+    user = await user_crud.request_password_reset(db, request.email)
+
+    # Always return success to prevent email enumeration
+    if user:
+        email_sent = send_password_reset_email(
+            user.email,
+            user.reset_token,
+            user.name
+        )
+        if not email_sent:
+            print(f"Warning: Failed to send password reset email to {user.email}")
+
+    return {"message": "If the email exists, a password reset link has been sent"}
+
+
+@router.post("/reset-password")
+async def reset_password(request: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
+    """
+    Reset password using token
+
+    รีเซ็ตรหัสผ่านด้วย token
+    """
+    user = await user_crud.reset_password(db, request.token, request.new_password)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    return {"message": "Password reset successfully"}
 
 
 @router.get("/", response_model=List[UserRead])
