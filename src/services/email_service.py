@@ -157,7 +157,7 @@ def send_password_reset_email(to_email: str, reset_token: str, user_name: str) -
     """
     Send password reset link
     """
-    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+    reset_link = f"{FRONTEND_URL}/forget?token={reset_token}"
 
     subject = "KU RUN - Password Reset Request"
 
