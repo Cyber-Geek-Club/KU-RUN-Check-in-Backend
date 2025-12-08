@@ -3,16 +3,17 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
+import traceback
 
 load_dotenv()
 
 # Email configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
-SMTP_USER = os.getenv("SMTP_USER")  # Your email
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # App password for Gmail
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 
 def send_email(to_email: str, subject: str, html_content: str) -> bool:
@@ -20,7 +21,18 @@ def send_email(to_email: str, subject: str, html_content: str) -> bool:
     Send email using SMTP
     Returns True if successful, False otherwise
     """
+    # Check if email configuration exists
+    if not SMTP_USER or not SMTP_PASSWORD:
+        print("ERROR: Email configuration missing!")
+        print(f"SMTP_USER: {SMTP_USER}")
+        print(f"SMTP_PASSWORD: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else 'None'}")
+        return False
+
     try:
+        print(f"Attempting to send email to: {to_email}")
+        print(f"Using SMTP: {SMTP_HOST}:{SMTP_PORT}")
+        print(f"From: {FROM_EMAIL}")
+
         # Create message
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
@@ -32,14 +44,27 @@ def send_email(to_email: str, subject: str, html_content: str) -> bool:
         message.attach(html_part)
 
         # Connect to SMTP server and send
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()  # Enable TLS
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            print("Connected to SMTP server")
+            server.starttls()
+            print("TLS enabled")
             server.login(SMTP_USER, SMTP_PASSWORD)
+            print("Login successful")
             server.send_message(message)
+            print(f"Email sent successfully to {to_email}")
 
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"SMTP Authentication Error: {e}")
+        print("Please check your email and password/app password")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"SMTP Error: {e}")
+        traceback.print_exc()
+        return False
     except Exception as e:
         print(f"Error sending email: {e}")
+        traceback.print_exc()
         return False
 
 
@@ -47,7 +72,12 @@ def send_verification_email(to_email: str, verification_token: str, user_name: s
     """
     Send email verification link
     """
-    verification_link = f"{FRONTEND_URL}/verify-email?token={verification_token}"
+    # If FRONTEND_URL is set, use frontend route, otherwise use API route
+    if FRONTEND_URL and not FRONTEND_URL.startswith("http://localhost:8000"):
+        verification_link = f"{FRONTEND_URL}/verify-email?token={verification_token}"
+    else:
+        # Use API endpoint directly
+        verification_link = f"http://localhost:8000/api/users/verify-email?token={verification_token}"
 
     subject = "KU RUN - Verify Your Email"
 
