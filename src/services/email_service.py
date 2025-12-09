@@ -74,7 +74,7 @@ def send_verification_email(to_email: str, verification_token: str, user_name: s
     """
     # If FRONTEND_URL is set, use frontend route, otherwise use API route
     if FRONTEND_URL and not FRONTEND_URL.startswith("http://localhost:8000"):
-        verification_link = f"{FRONTEND_URL}/verify-email?token={verification_token}"
+        verification_link = f"{FRONTEND_URL}/auth/verify-email?token={verification_token}"
     else:
         # Use API endpoint directly
         verification_link = f"http://localhost:8000/api/users/verify-email?token={verification_token}"
