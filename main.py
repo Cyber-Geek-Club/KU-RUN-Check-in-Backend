@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import os
 from src.api.endpoints import events, participations, rewards, users
 from src.database.db_config import init_db
 
@@ -9,10 +10,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# Read allowed origins from environment variable (comma separated) or use sensible default for local dev
+# Example: export ALLOWED_ORIGINS="http://localhost:5173,https://your.production.domain"
+_allowed = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+allowed_origins = [o.strip() for o in _allowed.split(",") if o.strip()]
+
+# Important: Do NOT use ["*"] when allow_credentials=True. Browsers will block the response.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this in production
+    allow_origins=allowed_origins,  # explicit origins (not "*") when credentials are allowed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
