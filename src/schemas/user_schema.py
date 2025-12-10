@@ -41,6 +41,9 @@ class UserRead(UserBase):
     faculty: Optional[str] = None
     department: Optional[str] = None
     is_verified: bool
+    is_locked: bool
+    failed_login_attempts: int
+    locked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     

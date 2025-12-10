@@ -128,10 +128,36 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     เข้าสู่ระบบ
     """
     user = await user_crud.get_user_by_email(db, credentials.email)
-    if not user or not user_crud.verify_password(credentials.password, user.password_hash):
+    
+    # Check if user exists
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
+        )
+    
+    # Check if account is locked
+    if user.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Account is locked due to too many failed login attempts. Please contact an organizer to unlock your account."
+        )
+    
+    # Verify password
+    if not user_crud.verify_password(credentials.password, user.password_hash):
+        # Increment failed login attempts
+        await user_crud.increment_failed_login(db, user)
+        
+        remaining_attempts = 10 - user.failed_login_attempts
+        if remaining_attempts <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail="Account has been locked due to too many failed login attempts. Please contact an organizer to unlock your account."
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Incorrect email or password. {remaining_attempts} attempts remaining before account lock."
         )
 
     if not user.is_verified:
@@ -139,6 +165,10 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email not verified. Please check your email for verification link."
         )
+
+    # Reset failed login attempts on successful login
+    if user.failed_login_attempts > 0:
+        await user_crud.reset_failed_login(db, user)
 
     # TODO: Generate JWT token
     return {
@@ -247,3 +277,37 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
             detail="User not found"
         )
     return None
+
+
+@router.post("/{user_id}/unlock", response_model=UserRead)
+async def unlock_user_account(
+    user_id: int,
+    organizer_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Unlock a locked user account (Organizer only)
+    
+    ปลดล็อคบัญชีผู้ใช้ (สำหรับ organizer เท่านั้น)
+    
+    Parameters:
+    - user_id: ID of the user to unlock
+    - organizer_id: ID of the organizer performing the unlock (for verification)
+    """
+    # Verify that the requester is an organizer
+    organizer = await user_crud.get_user_by_id(db, organizer_id)
+    if not organizer or organizer.role != "organizer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organizers can unlock accounts"
+        )
+    
+    # Unlock the user account
+    user = await user_crud.unlock_account(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return user

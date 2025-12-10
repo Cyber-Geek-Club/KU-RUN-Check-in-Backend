@@ -43,6 +43,11 @@ class User(Base):
     reset_token = Column(String(255), nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
 
+    # Account locking
+    failed_login_attempts = Column(Integer, default=0)
+    is_locked = Column(Boolean, default=False)
+    locked_at = Column(DateTime, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

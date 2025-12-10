@@ -178,3 +178,40 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Opt
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def increment_failed_login(db: AsyncSession, user: User) -> User:
+    """Increment failed login attempts and lock account if threshold reached"""
+    user.failed_login_attempts += 1
+    
+    # Lock account if failed attempts reach 10
+    if user.failed_login_attempts >= 10:
+        user.is_locked = True
+        user.locked_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def reset_failed_login(db: AsyncSession, user: User) -> User:
+    """Reset failed login attempts on successful login"""
+    user.failed_login_attempts = 0
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def unlock_account(db: AsyncSession, user_id: int) -> Optional[User]:
+    """Unlock a locked user account (for organizers)"""
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return None
+    
+    user.is_locked = False
+    user.failed_login_attempts = 0
+    user.locked_at = None
+    
+    await db.commit()
+    await db.refresh(user)
+    return user
