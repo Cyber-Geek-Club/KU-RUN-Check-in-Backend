@@ -11,7 +11,9 @@ except ImportError:
 # Base schemas
 class UserBase(BaseModel):
     email: EmailStr
-    name: str
+    first_name: str
+    last_name: str
+    title: Optional[str] = None
     role: UserRole
 
 class UserCreate(UserBase):
@@ -22,7 +24,9 @@ class UserCreate(UserBase):
     department: Optional[str] = None
 
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    title: Optional[str] = None
     major: Optional[str] = None
     faculty: Optional[str] = None
     department: Optional[str] = None

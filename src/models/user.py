@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
-from datetime import datetime
-import enum
 from datetime import datetime, timezone
+import enum
+
 from src.models.base import Base
 
 
@@ -21,11 +21,11 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(SQLEnum(UserRole), nullable=False)
 
-    # Name fields
+    # Name fields - Split into first and last name
     title = Column(String(50), nullable=True)
     first_name = Column(String(255), nullable=False)
     last_name = Column(String(255), nullable=False)
-    
+
     # Student-specific fields
     nisit_id = Column(String(20), unique=True, nullable=True)
     major = Column(String(255), nullable=True)
@@ -48,7 +48,7 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
-    # Relationships - specify foreign_keys to resolve ambiguity
+    # Relationships
     participations = relationship(
         "EventParticipation",
         back_populates="user",
@@ -56,3 +56,14 @@ class User(Base):
     )
     user_rewards = relationship("UserReward", back_populates="user")
     password_reset_logs = relationship("PasswordResetLog", back_populates="user")
+
+    # Add property to get full name
+    @property
+    def name(self):
+        """Get full name"""
+        parts = []
+        if self.title:
+            parts.append(self.title)
+        parts.append(self.first_name)
+        parts.append(self.last_name)
+        return " ".join(parts)
