@@ -74,7 +74,7 @@ def send_verification_email(to_email: str, verification_token: str, user_name: s
     """
     # Use API endpoint for verification
     if FRONTEND_URL and not FRONTEND_URL.startswith("http://localhost:8000"):
-        verification_link = f"{FRONTEND_URL}/auth/verify-email?token?token?token={verification_token}"
+        verification_link = f"{FRONTEND_URL}/auth/verify-email?token?token={verification_token}"
     else:
         # Fallback to API endpoint
         verification_link = f"http://localhost:8000/api/users/reset-password?token={verification_token}"
