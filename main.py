@@ -18,7 +18,7 @@ allowed_origins = [o.strip() for o in _allowed.split(",") if o.strip()]
 # Important: Do NOT use ["*"] when allow_credentials=True. Browsers will block the response.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,  # explicit origins (not "*") when credentials are allowed
+    allow_origins=["*"],  # explicit origins (not "*") when credentials are allowed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
