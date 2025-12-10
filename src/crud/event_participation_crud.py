@@ -2,7 +2,7 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.schemas.event_participation_schema import EventParticipationCreate
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import random
 import string
@@ -76,7 +76,7 @@ async def check_in_participation(db: AsyncSession, join_code: str, staff_id: int
 
     participation.status = ParticipationStatus.CHECKED_IN
     participation.checked_in_by = staff_id
-    participation.checked_in_at = datetime.utcnow()
+    participation.checked_in_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(participation)
@@ -89,7 +89,7 @@ async def submit_proof(db: AsyncSession, participation_id: int, proof_image_url:
         return None
 
     participation.proof_image_url = proof_image_url
-    participation.proof_submitted_at = datetime.utcnow()
+    participation.proof_submitted_at = datetime.now(timezone.utc)
     participation.status = ParticipationStatus.PROOF_SUBMITTED
 
     await db.commit()
@@ -109,12 +109,12 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
         participation.completion_code = completion_code
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_by = staff_id
-        participation.completed_at = datetime.utcnow()
+        participation.completed_at = datetime.now(timezone.utc)
     else:
         participation.status = ParticipationStatus.REJECTED
         participation.rejection_reason = rejection_reason
         participation.rejected_by = staff_id
-        participation.rejected_at = datetime.utcnow()
+        participation.rejected_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(participation)

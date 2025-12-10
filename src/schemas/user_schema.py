@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime
 from typing import Optional, Union
 from src.models.user import UserRole
@@ -7,6 +7,7 @@ try:
     from pydantic import ConfigDict
 except ImportError:
     ConfigDict = None
+
 
 # Base schemas
 class UserBase(BaseModel):
@@ -131,6 +132,7 @@ class OrganizerUpdate(BaseModel):
     last_name: Optional[str] = None
 
 # ========== Legacy/Generic Schemas (for backward compatibility) ==========
+
 class UserCreate(UserBase):
     """Legacy schema - ใช้สำหรับ backward compatibility"""
     password: str
@@ -142,17 +144,35 @@ class UserCreate(UserBase):
     # Officer-specific fields
     department: Optional[str] = None
 
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_names(cls, v):
+        if v:
+            v = v.strip()
+            if not v:
+                raise ValueError('Name cannot be empty or whitespace')
+        return v
+
+
 class UserUpdate(BaseModel):
     title: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     nisit_id: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    title: Optional[str] = None
     major: Optional[str] = None
     faculty: Optional[str] = None
     department: Optional[str] = None
 
-class UserRead(UserBase):
+
+class UserRead(BaseModel):
     id: int
+    email: EmailStr
+    first_name: str
+    last_name: str
+    title: Optional[str] = None
     role: UserRole
     nisit_id: Optional[str] = None
     major: Optional[str] = None
@@ -168,6 +188,8 @@ class UserRead(UserBase):
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"
+    # Add computed full name field
+    name: str
 
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
@@ -175,12 +197,15 @@ class UserRead(UserBase):
         class Config:
             orm_mode = True
 
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
 class PasswordReset(BaseModel):
     email: EmailStr
+
 
 class PasswordResetConfirm(BaseModel):
     token: str

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEnum, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 from src.models.base import Base
@@ -26,19 +26,27 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(SQLEnum(UserRole), nullable=False)
 
-    # Name fields
+    # Name fields - Split into first and last name
     title = Column(String(50), nullable=True)
     first_name = Column(String(255), nullable=False)
     last_name = Column(String(255), nullable=False)
 
+    # Student-specific fields
+    nisit_id = Column(String(20), unique=True, nullable=True)
+    major = Column(String(255), nullable=True)
+    faculty = Column(String(255), nullable=True)
+
+    # Officer-specific fields
+    department = Column(String(255), nullable=True)
+
     # Verification
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String(255), nullable=True)
-    verification_token_expires = Column(DateTime, nullable=True)
+    verification_token_expires = Column(DateTime(timezone=True), nullable=True)
 
     # Password reset
     reset_token = Column(String(255), nullable=True)
-    reset_token_expires = Column(DateTime, nullable=True)
+    reset_token_expires = Column(DateTime(timezone=True), nullable=True)
 
     # Account locking
     failed_login_attempts = Column(Integer, default=0)
@@ -46,10 +54,11 @@ class User(Base):
     locked_at = Column(DateTime, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
 
-    # Relationships - specify foreign_keys to resolve ambiguity
+    # Relationships
     participations = relationship(
         "EventParticipation",
         back_populates="user",
@@ -103,3 +112,13 @@ class Organizer(User):
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     # Organizer ไม่มีข้อมูลเพิ่มเติม - เก็บแค่ข้อมูลพื้นฐานจาก User table
+    # Add property to get full name
+    @property
+    def name(self):
+        """Get full name"""
+        parts = []
+        if self.title:
+            parts.append(self.title)
+        parts.append(self.first_name)
+        parts.append(self.last_name)
+        return " ".join(parts)

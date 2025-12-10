@@ -7,6 +7,10 @@ from src.schemas.user_schema import (
 )
 from typing import Optional, Union
 from datetime import datetime, timedelta
+from src.models.user import User
+from src.schemas.user_schema import UserCreate, UserUpdate
+from typing import Optional
+from datetime import datetime, timedelta, timezone
 import bcrypt
 import secrets
 
@@ -67,10 +71,13 @@ async def create_user(db: AsyncSession, user: UserCreate) -> User:
         title=user.title,
         first_name=user.first_name,
         last_name=user.last_name,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        title=user.title,
         role=user.role,
         is_verified=False,
         verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
     
     db.add(db_user)
@@ -190,7 +197,7 @@ async def verify_user_email(db: AsyncSession, token: str) -> Optional[User]:
         return None
 
     # Check if token has expired
-    if user.verification_token_expires < datetime.utcnow():
+    if user.verification_token_expires < datetime.now(timezone.utc):
         return None
 
     # Verify the user
@@ -212,7 +219,7 @@ async def resend_verification_email(db: AsyncSession, email: str) -> Optional[Us
 
     # Generate new token
     user.verification_token = generate_verification_token()
-    user.verification_token_expires = datetime.utcnow() + timedelta(hours=24)
+    user.verification_token_expires = datetime.now(timezone.utc) + timedelta(hours=24)
 
     await db.commit()
     await db.refresh(user)
@@ -251,7 +258,7 @@ async def request_password_reset(db: AsyncSession, email: str) -> Optional[User]
         return None
 
     user.reset_token = generate_verification_token()
-    user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
 
     await db.commit()
     await db.refresh(user)
@@ -265,7 +272,7 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Opt
     )
     user = result.scalar_one_or_none()
 
-    if not user or user.reset_token_expires < datetime.utcnow():
+    if not user or user.reset_token_expires < datetime.now(timezone.utc):
         return None
 
     user.password_hash = hash_password(new_password)

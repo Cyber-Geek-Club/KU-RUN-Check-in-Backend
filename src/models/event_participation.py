@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, ForeignKey, Text
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 from src.models.base import Base
@@ -35,10 +35,10 @@ class EventParticipation(Base):
     
     # Staff verification
     checked_in_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who checked in
-    checked_in_at = Column(DateTime, nullable=True)
+    checked_in_at = Column(DateTime(timezone=True), nullable=True)
     
     completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who verified completion
-    completed_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Rejection reason (for anti-cheating)
     rejection_reason = Column(Text, nullable=True)

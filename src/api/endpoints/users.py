@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from src.database.db_config import SessionLocal
+from src.api.dependencies.auth import (
+    get_db,
+    get_current_user,
+    require_organizer
+)
 from src.crud import user_crud
 from src.schemas.user_schema import (
     UserCreate, UserUpdate, UserRead, UserLogin,
@@ -13,7 +17,8 @@ from src.schemas.user_schema import (
 )
 from src.models.user import User, Student
 from src.services.email_service import send_verification_email, send_password_reset_email
-from typing import List, Union
+from typing import List
+from src.utils.token import create_access_token
 
 router = APIRouter()
 
@@ -163,6 +168,11 @@ async def register_organizer(organizer: OrganizerCreate, db: AsyncSession = Depe
 async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new user and send verification email (Legacy endpoint)
+@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Register a new user and send verification email
+    Public endpoint - no authentication required
 
     สมัครสมาชิกใหม่และส่งอีเมลยืนยัน
     """
@@ -209,6 +219,7 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
 async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     """
     Verify user's email using token from email
+    Public endpoint - no authentication required
 
     ยืนยันอีเมลด้วย token ที่ได้รับทางอีเมล
     """
@@ -231,6 +242,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
 async def resend_verification(email: str, db: AsyncSession = Depends(get_db)):
     """
     Resend verification email
+    Public endpoint - no authentication required
 
     ส่งอีเมลยืนยันใหม่อีกครั้ง
     """
@@ -262,6 +274,7 @@ async def resend_verification(email: str, db: AsyncSession = Depends(get_db)):
 async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """
     Login user
+    Public endpoint - no authentication required
 
     เข้าสู่ระบบ
     """
@@ -309,8 +322,12 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
         await user_crud.reset_failed_login(db, user)
 
     # TODO: Generate JWT token
+    # Generate JWT access token
+    access_token = create_access_token({"sub": str(user.id)})
+
     return {
-        "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
         "user_id": user.id,
         "email": user.email,
         "first_name": user.first_name,
@@ -323,6 +340,7 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
 async def forgot_password(request: PasswordReset, db: AsyncSession = Depends(get_db)):
     """
     Request password reset
+    Public endpoint - no authentication required
 
     ขอรีเซ็ตรหัสผ่าน
     """
@@ -345,6 +363,7 @@ async def forgot_password(request: PasswordReset, db: AsyncSession = Depends(get
 async def reset_password(request: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
     """
     Reset password using token
+    Public endpoint - no authentication required
 
     รีเซ็ตรหัสผ่านด้วย token
     """
@@ -359,10 +378,27 @@ async def reset_password(request: PasswordResetConfirm, db: AsyncSession = Depen
     return {"message": "Password reset successfully"}
 
 
-@router.get("/", response_model=List[UserRead])
-async def get_users(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
+@router.get("/me", response_model=UserRead)
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """
-    Get all users (admin only)
+    Get current logged-in user information
+    Requires: Any authenticated user
+
+    ดึงข้อมูลผู้ใช้ที่ล็อกอินอยู่
+    """
+    return current_user
+
+
+@router.get("/", response_model=List[UserRead])
+async def get_users(
+        skip: int = 0,
+        limit: int = 100,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(require_organizer)
+):
+    """
+    Get all users
+    Requires: Organizer role
 
     ดึงข้อมูลผู้ใช้ทั้งหมด
     """
@@ -370,12 +406,24 @@ async def get_users(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(
 
 
 @router.get("/{user_id}", response_model=UserRead)
-async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
+async def get_user(
+        user_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
     """
     Get user by ID
+    Requires: User can only view their own profile or organizer can view any
 
     ดึงข้อมูลผู้ใช้ตาม ID
     """
+    # Users can only view their own profile, unless they're organizer
+    if current_user.id != user_id and current_user.role.value != 'organizer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own profile"
+        )
+
     user = await user_crud.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(
@@ -386,12 +434,25 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{user_id}", response_model=UserRead)
-async def update_user(user_id: int, user_data: UserUpdate, db: AsyncSession = Depends(get_db)):
+async def update_user(
+        user_id: int,
+        user_data: UserUpdate,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
     """
     Update user information
+    Requires: User can only update their own profile or organizer can update any
 
     แก้ไขข้อมูลผู้ใช้
     """
+    # Users can only update their own profile, unless they're organizer
+    if current_user.id != user_id and current_user.role.value != 'organizer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only update your own profile"
+        )
+
     user = await user_crud.update_user(db, user_id, user_data)
     if not user:
         raise HTTPException(
@@ -402,9 +463,14 @@ async def update_user(user_id: int, user_data: UserUpdate, db: AsyncSession = De
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_user(
+        user_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(require_organizer)
+):
     """
     Delete user
+    Requires: Organizer role
 
     ลบผู้ใช้
     """
