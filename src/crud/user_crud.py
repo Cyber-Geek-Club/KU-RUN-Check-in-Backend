@@ -60,7 +60,9 @@ async def create_user(db: AsyncSession, user: UserCreate) -> User:
     db_user = User(
         email=user.email,
         password_hash=hashed_password,
-        name=user.name,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        title=user.title,
         role=user.role,
         nisit_id=user.nisit_id,
         major=user.major,
