@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SQLEn
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
-
+from datetime import datetime, timezone
 from src.models.base import Base
 
 
@@ -37,15 +37,16 @@ class User(Base):
     # Verification
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String(255), nullable=True)
-    verification_token_expires = Column(DateTime, nullable=True)
+    verification_token_expires = Column(DateTime(timezone=True), nullable=True)
 
     # Password reset
     reset_token = Column(String(255), nullable=True)
-    reset_token_expires = Column(DateTime, nullable=True)
+    reset_token_expires = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships - specify foreign_keys to resolve ambiguity
     participations = relationship(

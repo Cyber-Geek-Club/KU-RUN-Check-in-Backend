@@ -4,7 +4,7 @@ from sqlalchemy import and_
 from src.models.reward import Reward, UserReward
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.schemas.reward_schema import RewardCreate, RewardUpdate
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 
@@ -63,7 +63,7 @@ async def get_user_rewards(db: AsyncSession, user_id: int) -> List[UserReward]:
 async def check_and_award_rewards(db: AsyncSession, user_id: int):
     """Check if user qualifies for any rewards and award them"""
     rewards = await get_rewards(db)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     for reward in rewards:
         # Check if user already has this reward for current month
