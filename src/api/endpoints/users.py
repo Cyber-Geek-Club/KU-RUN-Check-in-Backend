@@ -5,11 +5,15 @@ from src.database.db_config import SessionLocal
 from src.crud import user_crud
 from src.schemas.user_schema import (
     UserCreate, UserUpdate, UserRead, UserLogin,
+    StudentCreate, StudentRead,
+    OfficerCreate, OfficerRead,
+    StaffCreate, StaffRead,
+    OrganizerCreate, OrganizerRead,
     PasswordReset, PasswordResetConfirm
 )
-from src.models.user import User
+from src.models.user import User, Student
 from src.services.email_service import send_verification_email, send_password_reset_email
-from typing import List
+from typing import List, Union
 
 router = APIRouter()
 
@@ -19,10 +23,146 @@ async def get_db():
         yield session
 
 
+# ========== Registration Endpoints แยกตาม Role ==========
+
+@router.post("/register/student", response_model=StudentRead, status_code=status.HTTP_201_CREATED)
+async def register_student(student: StudentCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Register a new student
+    
+    สมัครสมาชิกนักศึกษาใหม่
+    """
+    # Check if email already exists
+    existing_user = await user_crud.get_user_by_email(db, student.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Check if nisit_id already exists
+    existing_student = await user_crud.get_student_by_nisit_id(db, student.nisit_id)
+    if existing_student:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nisit ID already registered"
+        )
+    
+    # Create student
+    new_student = await user_crud.create_student(db, student)
+    
+    # Send verification email
+    email_sent = send_verification_email(
+        new_student.email,
+        new_student.verification_token,
+        f"{new_student.first_name} {new_student.last_name}"
+    )
+    
+    if not email_sent:
+        print(f"Warning: Failed to send verification email to {new_student.email}")
+    
+    return new_student
+
+
+@router.post("/register/officer", response_model=OfficerRead, status_code=status.HTTP_201_CREATED)
+async def register_officer(officer: OfficerCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Register a new officer
+    
+    สมัครสมาชิกเจ้าหน้าที่ใหม่
+    """
+    # Check if email already exists
+    existing_user = await user_crud.get_user_by_email(db, officer.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Create officer
+    new_officer = await user_crud.create_officer(db, officer)
+    
+    # Send verification email
+    email_sent = send_verification_email(
+        new_officer.email,
+        new_officer.verification_token,
+        f"{new_officer.first_name} {new_officer.last_name}"
+    )
+    
+    if not email_sent:
+        print(f"Warning: Failed to send verification email to {new_officer.email}")
+    
+    return new_officer
+
+
+@router.post("/register/staff", response_model=StaffRead, status_code=status.HTTP_201_CREATED)
+async def register_staff(staff: StaffCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Register a new staff member
+    
+    สมัครสมาชิกพนักงานใหม่
+    """
+    # Check if email already exists
+    existing_user = await user_crud.get_user_by_email(db, staff.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Create staff
+    new_staff = await user_crud.create_staff(db, staff)
+    
+    # Send verification email
+    email_sent = send_verification_email(
+        new_staff.email,
+        new_staff.verification_token,
+        f"{new_staff.first_name} {new_staff.last_name}"
+    )
+    
+    if not email_sent:
+        print(f"Warning: Failed to send verification email to {new_staff.email}")
+    
+    return new_staff
+
+
+@router.post("/register/organizer", response_model=OrganizerRead, status_code=status.HTTP_201_CREATED)
+async def register_organizer(organizer: OrganizerCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Register a new organizer (no additional fields required)
+    
+    สมัครสมาชิกผู้จัดงานใหม่ (ไม่ต้องกรอกข้อมูลเพิ่มเติม)
+    """
+    # Check if email already exists
+    existing_user = await user_crud.get_user_by_email(db, organizer.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Create organizer
+    new_organizer = await user_crud.create_organizer(db, organizer)
+    
+    # Send verification email
+    email_sent = send_verification_email(
+        new_organizer.email,
+        new_organizer.verification_token,
+        f"{new_organizer.first_name} {new_organizer.last_name}"
+    )
+    
+    if not email_sent:
+        print(f"Warning: Failed to send verification email to {new_organizer.email}")
+    
+    return new_organizer
+
+
+# ========== Legacy Registration Endpoint (for backward compatibility) ==========
+
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     """
-    Register a new user and send verification email
+    Register a new user and send verification email (Legacy endpoint)
 
     สมัครสมาชิกใหม่และส่งอีเมลยืนยัน
     """
@@ -42,10 +182,8 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
                 detail="Nisit ID is required for students"
             )
         # Check if nisit_id already exists
-        result = await db.execute(
-            select(User).where(User.nisit_id == user.nisit_id)
-        )
-        if result.scalar_one_or_none():
+        existing_student = await user_crud.get_student_by_nisit_id(db, user.nisit_id)
+        if existing_student:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Nisit ID already registered"

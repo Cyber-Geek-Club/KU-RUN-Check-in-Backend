@@ -1,8 +1,11 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.user import User
-from src.schemas.user_schema import UserCreate, UserUpdate
-from typing import Optional
+from src.models.user import User, Student, Officer, Staff, Organizer, UserRole
+from src.schemas.user_schema import (
+    UserCreate, UserUpdate,
+    StudentCreate, OfficerCreate, StaffCreate, OrganizerCreate
+)
+from typing import Optional, Union
 from datetime import datetime, timedelta
 import bcrypt
 import secrets
@@ -54,6 +57,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
+    """Legacy create_user - สำหรับ backward compatibility"""
     hashed_password = hash_password(user.password)
     verification_token = generate_verification_token()
 
@@ -64,25 +68,118 @@ async def create_user(db: AsyncSession, user: UserCreate) -> User:
         first_name=user.first_name,
         last_name=user.last_name,
         role=user.role,
-        is_verified=False,  # Email verification required
+        is_verified=False,
         verification_token=verification_token,
         verification_token_expires=datetime.utcnow() + timedelta(hours=24)
     )
-    
-    # Only set student-specific fields for students
-    if user.role == "student":
-        db_user.nisit_id = user.nisit_id
-        db_user.major = user.major
-        db_user.faculty = user.faculty
-    
-    # Only set officer-specific fields for officers
-    if user.role == "officer" or user.role == "staff":
-        db_user.department = user.department
     
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
     return db_user
+
+
+async def create_student(db: AsyncSession, student: StudentCreate) -> Student:
+    """สร้างนักศึกษาใหม่"""
+    hashed_password = hash_password(student.password)
+    verification_token = generate_verification_token()
+
+    db_student = Student(
+        email=student.email,
+        password_hash=hashed_password,
+        title=student.title,
+        first_name=student.first_name,
+        last_name=student.last_name,
+        role=UserRole.STUDENT,
+        nisit_id=student.nisit_id,
+        major=student.major,
+        faculty=student.faculty,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_student)
+    await db.commit()
+    await db.refresh(db_student)
+    return db_student
+
+
+async def create_officer(db: AsyncSession, officer: OfficerCreate) -> Officer:
+    """สร้างเจ้าหน้าที่ใหม่"""
+    hashed_password = hash_password(officer.password)
+    verification_token = generate_verification_token()
+
+    db_officer = Officer(
+        email=officer.email,
+        password_hash=hashed_password,
+        title=officer.title,
+        first_name=officer.first_name,
+        last_name=officer.last_name,
+        role=UserRole.OFFICER,
+        department=officer.department,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_officer)
+    await db.commit()
+    await db.refresh(db_officer)
+    return db_officer
+
+
+async def create_staff(db: AsyncSession, staff: StaffCreate) -> Staff:
+    """สร้างพนักงานใหม่"""
+    hashed_password = hash_password(staff.password)
+    verification_token = generate_verification_token()
+
+    db_staff = Staff(
+        email=staff.email,
+        password_hash=hashed_password,
+        title=staff.title,
+        first_name=staff.first_name,
+        last_name=staff.last_name,
+        role=UserRole.STAFF,
+        department=staff.department,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_staff)
+    await db.commit()
+    await db.refresh(db_staff)
+    return db_staff
+
+
+async def create_organizer(db: AsyncSession, organizer: OrganizerCreate) -> Organizer:
+    """สร้างผู้จัดงานใหม่ (ไม่มีข้อมูลเพิ่มเติม)"""
+    hashed_password = hash_password(organizer.password)
+    verification_token = generate_verification_token()
+
+    db_organizer = Organizer(
+        email=organizer.email,
+        password_hash=hashed_password,
+        title=organizer.title,
+        first_name=organizer.first_name,
+        last_name=organizer.last_name,
+        role=UserRole.ORGANIZER,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_organizer)
+    await db.commit()
+    await db.refresh(db_organizer)
+    return db_organizer
+
+
+async def get_student_by_nisit_id(db: AsyncSession, nisit_id: str) -> Optional[Student]:
+    """ค้นหานักศึกษาจาก nisit_id"""
+    result = await db.execute(select(Student).where(Student.nisit_id == nisit_id))
+    return result.scalar_one_or_none()
 
 
 async def verify_user_email(db: AsyncSession, token: str) -> Optional[User]:
