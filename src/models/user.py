@@ -21,11 +21,13 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(SQLEnum(UserRole), nullable=False)
 
-    # Common fields
-    name = Column(String(255), nullable=False)
-
+    # Name fields
+    title = Column(String(50), nullable=True)
+    first_name = Column(String(255), nullable=False)
+    last_name = Column(String(255), nullable=False)
+    
     # Student-specific fields
-    nisit_id = Column(String(20), unique=True, nullable=True)  # รหัสนิสิต
+    nisit_id = Column(String(20), unique=True, nullable=True)
     major = Column(String(255), nullable=True)
     faculty = Column(String(255), nullable=True)
 
