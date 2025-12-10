@@ -73,7 +73,12 @@ def send_verification_email(to_email: str, verification_token: str, user_name: s
     Send email verification link
     """
     # Use API endpoint for verification
-    verification_link = f"http://localhost:8000/api/users/verify-email?token={verification_token}"
+    if FRONTEND_URL and not FRONTEND_URL.startswith("http://localhost:8000"):
+        verification_link = f"{FRONTEND_URL}/auth/reset-password?token={verification_token}"
+    else:
+        # Fallback to API endpoint
+        verification_link = f"http://localhost:8000/api/users/reset-password?token={verification_token}"
+
 
     subject = "KU RUN - Verify Your Email"
 
