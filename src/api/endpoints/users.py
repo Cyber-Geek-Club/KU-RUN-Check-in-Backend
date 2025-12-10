@@ -34,8 +34,14 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
             detail="Email already registered"
         )
 
-    # Check if nisit_id already exists (for students)
-    if user.nisit_id:
+    # Validate student-specific fields
+    if user.role == "student":
+        if not user.nisit_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nisit ID is required for students"
+            )
+        # Check if nisit_id already exists
         result = await db.execute(
             select(User).where(User.nisit_id == user.nisit_id)
         )
@@ -52,7 +58,7 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     email_sent = send_verification_email(
         new_user.email,
         new_user.verification_token,
-        new_user.name
+        f"{new_user.first_name} {new_user.last_name}"
     )
 
     if not email_sent:
@@ -102,7 +108,7 @@ async def resend_verification(email: str, db: AsyncSession = Depends(get_db)):
     email_sent = send_verification_email(
         user.email,
         user.verification_token,
-        user.name
+        f"{user.first_name} {user.last_name}"
     )
 
     if not email_sent:
@@ -139,7 +145,8 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
         "message": "Login successful",
         "user_id": user.id,
         "email": user.email,
-        "name": user.name,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
         "role": user.role
     }
 
@@ -158,7 +165,7 @@ async def forgot_password(request: PasswordReset, db: AsyncSession = Depends(get
         email_sent = send_password_reset_email(
             user.email,
             user.reset_token,
-            user.name
+            f"{user.first_name} {user.last_name}"
         )
         if not email_sent:
             print(f"Warning: Failed to send password reset email to {user.email}")

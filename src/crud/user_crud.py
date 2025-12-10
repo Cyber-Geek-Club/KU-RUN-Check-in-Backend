@@ -60,16 +60,25 @@ async def create_user(db: AsyncSession, user: UserCreate) -> User:
     db_user = User(
         email=user.email,
         password_hash=hashed_password,
-        name=user.name,
+        title=user.title,
+        first_name=user.first_name,
+        last_name=user.last_name,
         role=user.role,
-        nisit_id=user.nisit_id,
-        major=user.major,
-        faculty=user.faculty,
-        department=user.department,
         is_verified=False,  # Email verification required
         verification_token=verification_token,
         verification_token_expires=datetime.utcnow() + timedelta(hours=24)
     )
+    
+    # Only set student-specific fields for students
+    if user.role == "student":
+        db_user.nisit_id = user.nisit_id
+        db_user.major = user.major
+        db_user.faculty = user.faculty
+    
+    # Only set officer-specific fields for officers
+    if user.role == "officer" or user.role == "staff":
+        db_user.department = user.department
+    
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
