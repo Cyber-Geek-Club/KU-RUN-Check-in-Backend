@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.db_config import SessionLocal
 from src.utils.token import verify_access_token
-from src.crud import user_crud
+from src.crud import userCrud
 from src.models.user import User, UserRole
 from typing import Optional
 

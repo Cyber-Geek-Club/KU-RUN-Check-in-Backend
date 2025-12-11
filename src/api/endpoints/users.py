@@ -6,7 +6,7 @@ from src.api.dependencies.auth import (
     get_current_user,
     require_organizer
 )
-from src.crud import user_crud
+from src.crud import userCrud
 from src.schemas.user_schema import (
     UserCreate, UserUpdate, UserRead, UserLogin,
     StudentCreate, StudentRead,
