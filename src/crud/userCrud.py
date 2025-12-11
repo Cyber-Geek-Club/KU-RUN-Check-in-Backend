@@ -57,7 +57,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
-    """Legacy create_user - สำหรับ backward compatibility"""
+    """Legacy create_user - for backward compatibility"""
     hashed_password = hash_password(user.password)
     verification_token = generate_verification_token()
 
