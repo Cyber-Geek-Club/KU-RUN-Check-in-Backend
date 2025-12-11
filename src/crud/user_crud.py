@@ -1,5 +1,12 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.models.user import User, Student, Officer, Staff, Organizer, UserRole
+from src.schemas.user_schema import (
+    UserCreate, UserUpdate,
+    StudentCreate, OfficerCreate, StaffCreate, OrganizerCreate
+)
+from typing import Optional, Union
+from datetime import datetime, timedelta
 from src.models.user import User
 from src.schemas.user_schema import UserCreate, UserUpdate
 from typing import Optional
@@ -54,28 +61,132 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
+    """Legacy create_user - สำหรับ backward compatibility"""
     hashed_password = hash_password(user.password)
     verification_token = generate_verification_token()
 
     db_user = User(
         email=user.email,
         password_hash=hashed_password,
+        title=user.title,
+        first_name=user.first_name,
+        last_name=user.last_name,
         first_name=user.first_name,
         last_name=user.last_name,
         title=user.title,
         role=user.role,
-        nisit_id=user.nisit_id,
-        major=user.major,
-        faculty=user.faculty,
-        department=user.department,
-        is_verified=False,  # Email verification required
+        is_verified=False,
         verification_token=verification_token,
         verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
+    
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
     return db_user
+
+
+async def create_student(db: AsyncSession, student: StudentCreate) -> Student:
+    """สร้างนักศึกษาใหม่"""
+    hashed_password = hash_password(student.password)
+    verification_token = generate_verification_token()
+
+    db_student = Student(
+        email=student.email,
+        password_hash=hashed_password,
+        title=student.title,
+        first_name=student.first_name,
+        last_name=student.last_name,
+        role=UserRole.STUDENT,
+        nisit_id=student.nisit_id,
+        major=student.major,
+        faculty=student.faculty,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_student)
+    await db.commit()
+    await db.refresh(db_student)
+    return db_student
+
+
+async def create_officer(db: AsyncSession, officer: OfficerCreate) -> Officer:
+    """สร้างเจ้าหน้าที่ใหม่"""
+    hashed_password = hash_password(officer.password)
+    verification_token = generate_verification_token()
+
+    db_officer = Officer(
+        email=officer.email,
+        password_hash=hashed_password,
+        title=officer.title,
+        first_name=officer.first_name,
+        last_name=officer.last_name,
+        role=UserRole.OFFICER,
+        department=officer.department,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_officer)
+    await db.commit()
+    await db.refresh(db_officer)
+    return db_officer
+
+
+async def create_staff(db: AsyncSession, staff: StaffCreate) -> Staff:
+    """สร้างพนักงานใหม่"""
+    hashed_password = hash_password(staff.password)
+    verification_token = generate_verification_token()
+
+    db_staff = Staff(
+        email=staff.email,
+        password_hash=hashed_password,
+        title=staff.title,
+        first_name=staff.first_name,
+        last_name=staff.last_name,
+        role=UserRole.STAFF,
+        department=staff.department,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_staff)
+    await db.commit()
+    await db.refresh(db_staff)
+    return db_staff
+
+
+async def create_organizer(db: AsyncSession, organizer: OrganizerCreate) -> Organizer:
+    """สร้างผู้จัดงานใหม่ (ไม่มีข้อมูลเพิ่มเติม)"""
+    hashed_password = hash_password(organizer.password)
+    verification_token = generate_verification_token()
+
+    db_organizer = Organizer(
+        email=organizer.email,
+        password_hash=hashed_password,
+        title=organizer.title,
+        first_name=organizer.first_name,
+        last_name=organizer.last_name,
+        role=UserRole.ORGANIZER,
+        is_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+    )
+    
+    db.add(db_organizer)
+    await db.commit()
+    await db.refresh(db_organizer)
+    return db_organizer
+
+
+async def get_student_by_nisit_id(db: AsyncSession, nisit_id: str) -> Optional[Student]:
+    """ค้นหานักศึกษาจาก nisit_id"""
+    result = await db.execute(select(Student).where(Student.nisit_id == nisit_id))
+    return result.scalar_one_or_none()
 
 
 async def verify_user_email(db: AsyncSession, token: str) -> Optional[User]:
@@ -168,6 +279,43 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Opt
     user.reset_token = None
     user.reset_token_expires = None
 
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def increment_failed_login(db: AsyncSession, user: User) -> User:
+    """Increment failed login attempts and lock account if threshold reached"""
+    user.failed_login_attempts += 1
+    
+    # Lock account if failed attempts reach 10
+    if user.failed_login_attempts >= 10:
+        user.is_locked = True
+        user.locked_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def reset_failed_login(db: AsyncSession, user: User) -> User:
+    """Reset failed login attempts on successful login"""
+    user.failed_login_attempts = 0
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def unlock_account(db: AsyncSession, user_id: int) -> Optional[User]:
+    """Unlock a locked user account (for organizers)"""
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return None
+    
+    user.is_locked = False
+    user.failed_login_attempts = 0
+    user.locked_at = None
+    
     await db.commit()
     await db.refresh(user)
     return user
