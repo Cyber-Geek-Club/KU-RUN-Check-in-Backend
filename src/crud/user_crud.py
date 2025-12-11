@@ -199,7 +199,6 @@ async def verify_user_email(db: AsyncSession, token: str) -> Optional[User]:
     user.verification_token_expires = None
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -215,7 +214,6 @@ async def resend_verification_email(db: AsyncSession, email: str) -> Optional[Us
     user.verification_token_expires = datetime.now(timezone.utc) + timedelta(hours=24)
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -229,7 +227,6 @@ async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> 
         setattr(user, key, value)
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -254,7 +251,6 @@ async def request_password_reset(db: AsyncSession, email: str) -> Optional[User]
     user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -273,7 +269,6 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Opt
     user.reset_token_expires = None
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -287,7 +282,6 @@ async def increment_failed_login(db: AsyncSession, user: User) -> User:
         user.locked_at = datetime.utcnow()
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -295,7 +289,6 @@ async def reset_failed_login(db: AsyncSession, user: User) -> User:
     """Reset failed login attempts on successful login"""
     user.failed_login_attempts = 0
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -310,5 +303,4 @@ async def unlock_account(db: AsyncSession, user_id: int) -> Optional[User]:
     user.locked_at = None
 
     await db.commit()
-    await db.refresh(user)
     return user
