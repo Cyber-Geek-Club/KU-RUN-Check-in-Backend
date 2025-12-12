@@ -14,7 +14,7 @@ router = APIRouter()
 
 # Configuration
 UPLOAD_DIR = Path("uploads")
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic", ".webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Create upload directories
