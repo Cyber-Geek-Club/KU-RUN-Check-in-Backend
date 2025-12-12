@@ -40,6 +40,48 @@ def generate_unique_filename(original_filename: str) -> str:
     return f"{unique_id}{file_ext}"
 
 
+def validate_subfolder(subfolder: str) -> None:
+    """Validate subfolder to prevent directory traversal attacks"""
+    allowed_subfolders = ["events", "proofs", "rewards"]
+    if subfolder not in allowed_subfolders:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid subfolder. Allowed: {', '.join(allowed_subfolders)}"
+        )
+
+
+def validate_file_path(file_path: str) -> Path:
+    """Validate and sanitize file path to prevent directory traversal"""
+    if not file_path or not file_path.startswith("/uploads/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path"
+        )
+
+    # Remove leading slash and validate
+    relative_path = file_path.lstrip("/")
+    full_path = Path(relative_path)
+
+    # Check if path is within uploads directory
+    try:
+        resolved_path = full_path.resolve()
+        uploads_path = UPLOAD_DIR.resolve()
+
+        # Ensure the resolved path is within uploads directory
+        if not str(resolved_path).startswith(str(uploads_path)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file path - directory traversal detected"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path"
+        )
+
+    return full_path
+
+
 async def save_upload_file(
         file: UploadFile,
         subfolder: str = "events"
@@ -55,10 +97,16 @@ async def save_upload_file(
         Relative path to the saved file
     """
     validate_image_file(file)
+    validate_subfolder(subfolder)
 
     # Generate unique filename
     filename = generate_unique_filename(file.filename)
-    file_path = UPLOAD_DIR / subfolder / filename
+
+    # Ensure directory exists (Safety check)
+    save_path = UPLOAD_DIR / subfolder
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    file_path = save_path / filename
 
     # Check file size while reading
     total_size = 0
@@ -80,6 +128,9 @@ async def save_upload_file(
     except Exception as e:
         # Clean up on error
         file_path.unlink(missing_ok=True)
+        # Re-raise HTTP exceptions
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not save file: {str(e)}"
@@ -102,15 +153,20 @@ async def delete_upload_file(file_path: str) -> bool:
     if not file_path:
         return False
 
-    # Remove leading slash and construct full path
-    relative_path = file_path.lstrip("/")
-    full_path = Path(relative_path)
-
     try:
+        # Validate path to prevent directory traversal
+        full_path = validate_file_path(file_path)
+
         if full_path.exists():
             full_path.unlink()
             return True
         return False
+    except HTTPException:
+        # Re-raise validation errors
+        raise
     except Exception as e:
         print(f"Error deleting file {file_path}: {e}")
-        return False
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not delete file: {str(e)}"
+        )

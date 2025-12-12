@@ -2,8 +2,12 @@ import os
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import UploadFile, HTTPException, status, APIRouter, Form
+from fastapi import UploadFile, HTTPException, status, APIRouter, Form, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 import aiofiles
+
+from src.api.dependencies.auth import get_db, get_current_user, require_staff_or_organizer
+from src.models.user import User
 
 # สร้าง Router instance เพื่อให้ main.py เรียกใช้ได้
 router = APIRouter()
@@ -43,6 +47,47 @@ def generate_unique_filename(original_filename: str) -> str:
     return f"{unique_id}{file_ext}"
 
 
+def validate_subfolder(subfolder: str) -> None:
+    """Validate subfolder to prevent directory traversal attacks"""
+    allowed_subfolders = ["events", "proofs", "rewards"]
+    if subfolder not in allowed_subfolders:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid subfolder. Allowed: {', '.join(allowed_subfolders)}"
+        )
+
+
+def validate_file_path(file_path: str) -> Path:
+    """Validate and sanitize file path to prevent directory traversal"""
+    if not file_path or not file_path.startswith("/uploads/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path"
+        )
+
+    # Remove leading slash and validate
+    relative_path = file_path.lstrip("/")
+    full_path = Path(relative_path)
+
+    # Check if path is within uploads directory
+    try:
+        resolved_path = full_path.resolve()
+        uploads_path = UPLOAD_DIR.resolve()
+
+        if not str(resolved_path).startswith(str(uploads_path)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file path - directory traversal detected"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path"
+        )
+
+    return full_path
+
+
 async def save_upload_file(
         file: UploadFile,
         subfolder: str = "events"
@@ -51,6 +96,7 @@ async def save_upload_file(
     Save uploaded file to disk
     """
     validate_image_file(file)
+    validate_subfolder(subfolder)
 
     # Generate unique filename
     filename = generate_unique_filename(file.filename)
@@ -98,31 +144,104 @@ async def delete_upload_file(file_path: str) -> bool:
     if not file_path:
         return False
 
-    # Remove leading slash and construct full path
-    relative_path = file_path.lstrip("/")
-    full_path = Path(relative_path)
-
     try:
+        full_path = validate_file_path(file_path)
+
         if full_path.exists():
             full_path.unlink()
             return True
         return False
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error deleting file {file_path}: {e}")
-        return False
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not delete file: {str(e)}"
+        )
 
 
-# --- เพิ่ม Endpoint สำหรับ Upload ---
+# --- API Endpoints ---
+
 @router.post("/upload")
 async def upload_image(
         file: UploadFile,
-        subfolder: str = Form("events")  # รับค่า subfolder จาก Form data (default: events)
+        subfolder: str = Form("events"),
+        current_user: User = Depends(get_current_user)
 ):
     """
-    API Endpoint สำหรับอัปโหลดรูปภาพ
+    Upload an image file
+    Requires: Authenticated user
+
+    - **file**: Image file to upload (jpg, jpeg, png, gif, webp)
+    - **subfolder**: Destination folder (events, proofs, rewards)
+    - **Returns**: URL path to the uploaded image
     """
-    if subfolder not in ["events", "proofs", "rewards"]:
-        raise HTTPException(status_code=400, detail="Invalid subfolder")
+    # Additional validation based on user role and subfolder
+    if subfolder == "events" and current_user.role.value not in ['organizer', 'staff']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organizers and staff can upload event images"
+        )
+
+    if subfolder == "rewards" and current_user.role.value != 'organizer':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organizers can upload reward images"
+        )
+
+    # Proofs can be uploaded by any authenticated user (students uploading their completion proof)
 
     file_url = await save_upload_file(file, subfolder)
-    return {"url": file_url}
+    return {
+        "success": True,
+        "url": file_url,
+        "message": "Image uploaded successfully"
+    }
+
+
+@router.delete("/delete")
+async def delete_image(
+        file_path: str,
+        current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    Delete an uploaded image
+    Requires: Staff or Organizer role
+
+    - **file_path**: Path to the file to delete (e.g., /uploads/events/abc123.jpg)
+    - **Returns**: Success status
+    """
+    deleted = await delete_upload_file(file_path)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    return {
+        "success": True,
+        "message": "Image deleted successfully",
+        "deleted_path": file_path
+    }
+
+
+@router.get("/info")
+async def get_upload_info(
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Get upload configuration information
+    Requires: Authenticated user
+    """
+    return {
+        "max_file_size_mb": MAX_FILE_SIZE / (1024 * 1024),
+        "allowed_extensions": list(ALLOWED_EXTENSIONS),
+        "allowed_subfolders": ["events", "proofs", "rewards"],
+        "upload_permissions": {
+            "events": ["organizer", "staff"],
+            "proofs": ["student", "officer", "staff", "organizer"],
+            "rewards": ["organizer"]
+        }
+    }
