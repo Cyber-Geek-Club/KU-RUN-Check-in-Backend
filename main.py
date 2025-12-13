@@ -20,7 +20,7 @@ allowed_origins = [o.strip() for o in _allowed.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # <-- แก้ไข: ใช้ List ที่กำหนดไว้ ห้ามใช้ ["*"]
-    allow_credentials=True,
+    allow_credentials=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
