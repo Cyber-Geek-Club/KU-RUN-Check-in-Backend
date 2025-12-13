@@ -4,6 +4,7 @@ from sqlalchemy import and_
 from src.models.reward import Reward, UserReward
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.schemas.reward_schema import RewardCreate, RewardUpdate
+from src.crud import notification_crud
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
@@ -106,5 +107,9 @@ async def check_and_award_rewards(db: AsyncSession, user_id: int):
                 earned_year=current_year
             )
             db.add(user_reward)
+            await db.commit()
 
-    await db.commit()
+            # 🔔 สร้างการแจ้งเตือน: ได้รับรางวัล
+            await notification_crud.notify_reward_earned(
+                db, user_id, reward.id, reward.name
+            )
