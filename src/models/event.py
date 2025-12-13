@@ -13,10 +13,10 @@ class Event(Base):
     description = Column(Text, nullable=True)
 
     # Event details
-    event_date = Column(DateTime(timezone=True), nullable=False)  # Changed to timezone-aware
-    event_end_date = Column(DateTime(timezone=True), nullable=True)  # Changed to timezone-aware
+    event_date = Column(DateTime(timezone=True), nullable=False)
+    event_end_date = Column(DateTime(timezone=True), nullable=True)
     location = Column(String(500), nullable=True)
-    distance_km = Column(Integer, nullable=True)  # ระยะทางวิ่ง (กิโลเมตร)
+    distance_km = Column(Integer, nullable=True)
     max_participants = Column(Integer, nullable=True)
 
     # Event image/banner
@@ -29,11 +29,16 @@ class Event(Base):
     # Created by staff
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
 
-    # Timestamps - Changed to timezone-aware
+    # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
-    # Relationships
+    # Relationships with CASCADE DELETE
     creator = relationship("User", foreign_keys=[created_by])
-    participations = relationship("EventParticipation", back_populates="event")
+    participations = relationship(
+        "EventParticipation",
+        back_populates="event",
+        cascade="all, delete-orphan",  # ← เพิ่ม cascade delete
+        passive_deletes=True  # ← ใช้ database cascade
+    )

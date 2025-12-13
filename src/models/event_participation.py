@@ -20,7 +20,11 @@ class EventParticipation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    event_id = Column(
+        Integer,
+        ForeignKey("events.id", ondelete="CASCADE"),  # ← เพิ่ม ondelete
+        nullable=False
+    )
     
     # Unique codes
     join_code = Column(String(5), unique=True, nullable=False, index=True)  # 5-digit code for check-in

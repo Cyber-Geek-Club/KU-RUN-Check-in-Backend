@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.event import Event
 from src.schemas.event_schema import EventCreate, EventUpdate
 from typing import Optional
-
+from sqlalchemy.orm import selectinload
 
 async def get_events(db: AsyncSession, skip: int = 0, limit: int = 100, is_published: Optional[bool] = None):
     query = select(Event)
@@ -45,14 +45,25 @@ async def update_event(db: AsyncSession, event_id: int, event_data: EventUpdate)
 
 
 async def delete_event(db: AsyncSession, event_id: int) -> bool:
-    result = await db.execute(select(Event).where(Event.id == event_id))
-    event = result.scalar_one_or_none()
-    if not event:
-        return False
+    try:
+        result = await db.execute(
+            select(Event)
+            .options(selectinload(Event.participations))
+            .where(Event.id == event_id)
+        )
+        event = result.scalar_one_or_none()
 
-    await db.delete(event)
-    await db.commit()
-    return True
+        if not event:
+            return False
+
+        await db.delete(event)
+        await db.commit()
+        return True
+
+    except Exception as e:
+        await db.rollback()
+        print(f"Error deleting event: {e}")
+        raise
 
 
 async def get_events_by_creator(db: AsyncSession, creator_id: int):
