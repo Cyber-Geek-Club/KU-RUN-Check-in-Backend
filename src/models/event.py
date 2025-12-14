@@ -45,14 +45,23 @@ class Event(Base):
 
     @property
     def participant_count(self) -> int:
-        """นับจำนวนผู้เข้าร่วมทั้งหมด"""
-        return len(self.participations) if self.participations else 0
+        """นับจำนวนผู้เข้าร่วมที่ยังไม่ได้ cancel"""
+        if not self.participations:
+            return 0
+
+        from src.models.event_participation import ParticipationStatus
+
+        active_participants = [
+            p for p in self.participations
+            if p.status != ParticipationStatus.CANCELLED
+        ]
+        return len(active_participants)
 
     @property
     def remaining_slots(self) -> int:
         """คำนวณที่ว่างที่เหลือ"""
         if self.max_participants is None:
-            return -1  # ไม่จำกัดจำนวน
+            return -1
         return max(0, self.max_participants - self.participant_count)
 
     @property

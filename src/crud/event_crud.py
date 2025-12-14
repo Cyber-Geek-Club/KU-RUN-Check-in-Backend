@@ -2,7 +2,7 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
 from src.models.event import Event
-from src.models.event_participation import EventParticipation
+from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.user import User
 from src.schemas.event_schema import EventCreate, EventUpdate, ParticipantStats, ParticipantInfo
 from typing import Optional, Dict, List
@@ -14,7 +14,10 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
     result = await db.execute(
         select(EventParticipation, User)
         .join(User, EventParticipation.user_id == User.id)
-        .where(EventParticipation.event_id == event_id)
+        .where(
+            EventParticipation.event_id == event_id,
+            EventParticipation.status != ParticipationStatus.CANCELLED
+        )
     )
     participations = result.all()
 
@@ -67,11 +70,7 @@ async def get_events(
         is_published: Optional[bool] = None,
         include_stats: bool = False
 ) -> List[Event]:
-    """
-    ดึงรายการงานทั้งหมด
-    - participant_count จะแสดงอัตโนมัติเสมอ
-    - participant_stats จะแสดงเมื่อ include_stats=True
-    """
+    """ดึงรายการงานทั้งหมด"""
     query = select(Event).options(selectinload(Event.participations))
 
     if is_published is not None:
@@ -82,7 +81,6 @@ async def get_events(
     result = await db.execute(query)
     events = result.scalars().all()
 
-    # เพิ่มสถิติละเอียดถ้าต้องการ
     if include_stats:
         for event in events:
             event.participant_stats = await get_event_participant_stats(db, event.id)
@@ -95,11 +93,7 @@ async def get_event_by_id(
         event_id: int,
         include_stats: bool = False
 ) -> Optional[Event]:
-    """
-    ดึงข้อมูลงานตาม ID
-    - participant_count จะแสดงอัตโนมัติเสมอ
-    - participant_stats จะแสดงเมื่อ include_stats=True
-    """
+    """ดึงข้อมูลงานตาม ID"""
     result = await db.execute(
         select(Event)
         .options(selectinload(Event.participations))
@@ -107,7 +101,6 @@ async def get_event_by_id(
     )
     event = result.scalar_one_or_none()
 
-    # เพิ่มสถิติละเอียดถ้าต้องการ
     if event and include_stats:
         event.participant_stats = await get_event_participant_stats(db, event.id)
 
@@ -123,7 +116,6 @@ async def create_event(db: AsyncSession, event: EventCreate, created_by: int) ->
     db.add(db_event)
     await db.commit()
 
-    # โหลด relationship เพื่อให้ participant_count ทำงาน
     await db.refresh(db_event, attribute_names=['participations'])
 
     return db_event
@@ -185,10 +177,7 @@ async def get_events_by_creator(db: AsyncSession, creator_id: int) -> List[Event
 
 
 async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any]:
-    """
-    ตรวจสอบความจุของงาน
-    ใช้สำหรับตรวจสอบก่อนให้ join
-    """
+    """ตรวจสอบความจุของงาน"""
     event = await get_event_by_id(db, event_id)
 
     if not event:
