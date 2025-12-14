@@ -2,7 +2,7 @@ import os
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import UploadFile, HTTPException, status, APIRouter, Form, Depends
+from fastapi import UploadFile, HTTPException, status, APIRouter, File, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 import aiofiles
 
@@ -165,8 +165,8 @@ async def delete_upload_file(file_path: str) -> bool:
 
 @router.post("/upload")
 async def upload_image(
-        file: UploadFile,
-        subfolder: str = Form("events"),
+        file: UploadFile = File(...),
+        subfolder: str = "events",
         current_user: User = Depends(get_current_user)
 ):
     """
@@ -177,6 +177,9 @@ async def upload_image(
     - **subfolder**: Destination folder (events, proofs, rewards)
     - **Returns**: URL path to the uploaded image
     """
+    # Validate subfolder first (before checking permissions)
+    validate_subfolder(subfolder)
+
     # Additional validation based on user role and subfolder
     if subfolder == "events" and current_user.role.value not in ['organizer', 'staff']:
         raise HTTPException(
