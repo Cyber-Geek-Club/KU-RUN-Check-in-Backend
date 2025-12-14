@@ -2,7 +2,7 @@ import os
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import UploadFile, HTTPException, status, APIRouter, File, Depends
+from fastapi import UploadFile, HTTPException, status, APIRouter, File, Depends, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 import aiofiles
 
@@ -166,7 +166,7 @@ async def delete_upload_file(file_path: str) -> bool:
 @router.post("/upload")
 async def upload_image(
         file: UploadFile = File(...),
-        subfolder: str = "events",
+        subfolder: str = Form("events"),  # Changed from query parameter to form field
         current_user: User = Depends(get_current_user)
 ):
     """
@@ -178,7 +178,13 @@ async def upload_image(
     - **Returns**: URL path to the uploaded image
     """
     # Validate subfolder first (before checking permissions)
-    validate_subfolder(subfolder)
+    try:
+        validate_subfolder(subfolder)
+    except HTTPException as e:
+        return {
+            "success": False,
+            "error": e.detail
+        }
 
     # Additional validation based on user role and subfolder
     if subfolder == "events" and current_user.role.value not in ['organizer', 'staff']:
@@ -195,12 +201,23 @@ async def upload_image(
 
     # Proofs can be uploaded by any authenticated user (students uploading their completion proof)
 
-    file_url = await save_upload_file(file, subfolder)
-    return {
-        "success": True,
-        "url": file_url,
-        "message": "Image uploaded successfully"
-    }
+    try:
+        file_url = await save_upload_file(file, subfolder)
+        return {
+            "success": True,
+            "url": file_url,
+            "message": "Image uploaded successfully"
+        }
+    except HTTPException as e:
+        return {
+            "success": False,
+            "error": e.detail
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Upload failed: {str(e)}"
+        }
 
 
 @router.delete("/delete")
