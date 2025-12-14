@@ -131,6 +131,47 @@ async def submit_proof(db: AsyncSession, participation_id: int, proof_image_url:
     return participation
 
 
+async def resubmit_proof(db: AsyncSession, participation_id: int, proof_image_url: str) -> Optional[EventParticipation]:
+    """
+    ส่งหลักฐานใหม่หลังจากถูกปฏิเสธ
+
+    Args:
+        db: Database session
+        participation_id: ID ของการเข้าร่วม
+        proof_image_url: URL รูปภาพหลักฐานใหม่
+
+    Returns:
+        EventParticipation ที่อัปเดตแล้ว หรือ None ถ้าไม่สามารถส่งใหม่ได้
+    """
+    participation = await get_participation_by_id(db, participation_id)
+
+    # ตรวจสอบว่าต้องเป็น status REJECTED เท่านั้น
+    if not participation or participation.status != ParticipationStatus.REJECTED:
+        return None
+
+    # อัปเดตหลักฐานใหม่
+    participation.proof_image_url = proof_image_url
+    participation.proof_submitted_at = datetime.now(timezone.utc)
+    participation.status = ParticipationStatus.PROOF_SUBMITTED
+
+    # ล้างข้อมูลการปฏิเสธ
+    participation.rejection_reason = None
+    participation.rejected_by = None
+    participation.rejected_at = None
+
+    await db.commit()
+    await db.refresh(participation)
+
+    # 🔔 สร้างการแจ้งเตือน: ส่งหลักฐานใหม่แล้ว
+    if participation.event:
+        await notification_crud.notify_proof_resubmitted(
+            db, participation.user_id, participation.event_id,
+            participation.id, participation.event.title
+        )
+
+    return participation
+
+
 async def verify_completion(db: AsyncSession, participation_id: int, staff_id: int, approved: bool,
                             rejection_reason: Optional[str] = None) -> Optional[EventParticipation]:
     participation = await get_participation_by_id(db, participation_id)

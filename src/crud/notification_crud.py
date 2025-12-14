@@ -233,6 +233,25 @@ async def notify_proof_submitted(
     )
 
 
+async def notify_proof_resubmitted(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int,
+        participation_id: int,
+        event_title: str
+):
+    """แจ้งเตือนเมื่อส่งหลักฐานใหม่แล้ว (หลังจากถูกปฏิเสธ)"""
+    return await create_notification(
+        db=db,
+        user_id=user_id,
+        notification_type=NotificationType.PROOF_SUBMITTED,
+        title="ส่งหลักฐานใหม่แล้ว 🔄",
+        message=f'คุณได้ส่งหลักฐานใหม่สำหรับงาน "{event_title}" เรียบร้อยแล้ว รอการตรวจสอบจากเจ้าหน้าที่',
+        event_id=event_id,
+        participation_id=participation_id
+    )
+
+
 async def notify_completion_approved(
         db: AsyncSession,
         user_id: int,
@@ -267,7 +286,7 @@ async def notify_completion_rejected(
         user_id=user_id,
         notification_type=NotificationType.COMPLETION_REJECTED,
         title="หลักฐานไม่ผ่าน ❌",
-        message=f'หลักฐานงาน "{event_title}" ไม่ผ่านการตรวจสอบ เหตุผล: {reason}',
+        message=f'หลักฐานงาน "{event_title}" ไม่ผ่านการตรวจสอบ เหตุผล: {reason}. คุณสามารถส่งหลักฐานใหม่ได้',
         event_id=event_id,
         participation_id=participation_id
     )

@@ -190,6 +190,58 @@ async def submit_proof(
     return participation
 
 
+@router.put("/{participation_id}/resubmit-proof", response_model=EventParticipationRead)
+async def resubmit_proof(
+        participation_id: int,
+        proof_data: EventParticipationProofSubmit,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Resubmit proof of completion (after rejection)
+    Requires: Own participation
+
+    ส่งหลักฐานใหม่หลังจากถูกปฏิเสธ
+    - สามารถส่งได้เฉพาะเมื่อ status เป็น REJECTED
+    - Status จะเปลี่ยนจาก REJECTED → PROOF_SUBMITTED
+    - ล้างข้อมูล rejection_reason และ rejected_at
+    - ส่งการแจ้งเตือนอัตโนมัติ
+
+    **Use case:** เมื่อหลักฐานถูกปฏิเสธ ผู้ใช้สามารถส่งหลักฐานใหม่ได้
+    """
+    participation = await event_participation_crud.get_participation_by_id(db, participation_id)
+    if not participation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Participation not found"
+        )
+
+    if participation.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only resubmit proof for your own participation"
+        )
+
+    # ตรวจสอบว่าต้องเป็น status REJECTED เท่านั้น
+    if participation.status != ParticipationStatus.REJECTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot resubmit proof. Current status: {participation.status.value}. Only rejected proofs can be resubmitted."
+        )
+
+    participation = await event_participation_crud.resubmit_proof(
+        db, participation_id, proof_data.proof_image_url
+    )
+
+    if not participation:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to resubmit proof"
+        )
+
+    return participation
+
+
 @router.post("/verify", response_model=EventParticipationRead)
 async def verify_completion(
         verify_data: EventParticipationVerify,
