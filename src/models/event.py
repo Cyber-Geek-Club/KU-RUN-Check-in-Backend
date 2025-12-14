@@ -39,6 +39,25 @@ class Event(Base):
     participations = relationship(
         "EventParticipation",
         back_populates="event",
-        cascade="all, delete-orphan",  # ← เพิ่ม cascade delete
-        passive_deletes=True  # ← ใช้ database cascade
+        cascade="all, delete-orphan",
+        passive_deletes=True
     )
+
+    @property
+    def participant_count(self) -> int:
+        """นับจำนวนผู้เข้าร่วมทั้งหมด"""
+        return len(self.participations) if self.participations else 0
+
+    @property
+    def remaining_slots(self) -> int:
+        """คำนวณที่ว่างที่เหลือ"""
+        if self.max_participants is None:
+            return -1  # ไม่จำกัดจำนวน
+        return max(0, self.max_participants - self.participant_count)
+
+    @property
+    def is_full(self) -> bool:
+        """ตรวจสอบว่างานเต็มหรือไม่"""
+        if self.max_participants is None:
+            return False
+        return self.participant_count >= self.max_participants

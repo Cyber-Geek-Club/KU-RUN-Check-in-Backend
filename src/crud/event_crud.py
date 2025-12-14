@@ -5,22 +5,12 @@ from src.models.event import Event
 from src.models.event_participation import EventParticipation
 from src.models.user import User
 from src.schemas.event_schema import EventCreate, EventUpdate, ParticipantStats, ParticipantInfo
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from sqlalchemy.orm import selectinload
-
-
-async def get_event_participant_count(db: AsyncSession, event_id: int) -> int:
-    """นับจำนวนผู้เข้าร่วมทั้งหมดในงาน"""
-    result = await db.execute(
-        select(func.count(EventParticipation.id))
-        .where(EventParticipation.event_id == event_id)
-    )
-    return result.scalar() or 0
 
 
 async def get_event_participant_stats(db: AsyncSession, event_id: int) -> ParticipantStats:
     """ดึงสถิติผู้เข้าร่วมแบบละเอียด"""
-    # Get all participations with user info
     result = await db.execute(
         select(EventParticipation, User)
         .join(User, EventParticipation.user_id == User.id)
@@ -28,16 +18,13 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
     )
     participations = result.all()
 
-    # Count by status
     by_status: Dict[str, int] = {}
     by_role: Dict[str, int] = {}
 
     for participation, user in participations:
-        # Count by status
         status = participation.status.value
         by_status[status] = by_status.get(status, 0) + 1
 
-        # Count by role
         role = user.role.value
         by_role[role] = by_role.get(role, 0) + 1
 
@@ -48,7 +35,7 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
     )
 
 
-async def get_event_participants(db: AsyncSession, event_id: int) -> list:
+async def get_event_participants(db: AsyncSession, event_id: int) -> List[ParticipantInfo]:
     """ดึงรายชื่อผู้เข้าร่วมทั้งหมด"""
     result = await db.execute(
         select(EventParticipation, User)
@@ -79,20 +66,25 @@ async def get_events(
         limit: int = 100,
         is_published: Optional[bool] = None,
         include_stats: bool = False
-):
-    """ดึงรายการงานทั้งหมด"""
-    query = select(Event)
+) -> List[Event]:
+    """
+    ดึงรายการงานทั้งหมด
+    - participant_count จะแสดงอัตโนมัติเสมอ
+    - participant_stats จะแสดงเมื่อ include_stats=True
+    """
+    query = select(Event).options(selectinload(Event.participations))
+
     if is_published is not None:
         query = query.where(Event.is_published == is_published)
+
     query = query.offset(skip).limit(limit).order_by(Event.event_date.desc())
 
     result = await db.execute(query)
     events = result.scalars().all()
 
-    # เพิ่มข้อมูลจำนวนผู้เข้าร่วมถ้าต้องการ
+    # เพิ่มสถิติละเอียดถ้าต้องการ
     if include_stats:
         for event in events:
-            event.participant_count = await get_event_participant_count(db, event.id)
             event.participant_stats = await get_event_participant_stats(db, event.id)
 
     return events
@@ -103,36 +95,49 @@ async def get_event_by_id(
         event_id: int,
         include_stats: bool = False
 ) -> Optional[Event]:
-    """ดึงข้อมูลงานตาม ID"""
-    result = await db.execute(select(Event).where(Event.id == event_id))
+    """
+    ดึงข้อมูลงานตาม ID
+    - participant_count จะแสดงอัตโนมัติเสมอ
+    - participant_stats จะแสดงเมื่อ include_stats=True
+    """
+    result = await db.execute(
+        select(Event)
+        .options(selectinload(Event.participations))
+        .where(Event.id == event_id)
+    )
     event = result.scalar_one_or_none()
 
-    # เพิ่มข้อมูลจำนวนผู้เข้าร่วมถ้าต้องการ
+    # เพิ่มสถิติละเอียดถ้าต้องการ
     if event and include_stats:
-        event.participant_count = await get_event_participant_count(db, event.id)
         event.participant_stats = await get_event_participant_stats(db, event.id)
 
     return event
 
 
 async def create_event(db: AsyncSession, event: EventCreate, created_by: int) -> Event:
+    """สร้างงานใหม่"""
     db_event = Event(
         **event.dict(),
         created_by=created_by
     )
     db.add(db_event)
     await db.commit()
-    await db.refresh(db_event)
 
-    # เพิ่มข้อมูล participant_count เริ่มต้น
-    db_event.participant_count = 0
+    # โหลด relationship เพื่อให้ participant_count ทำงาน
+    await db.refresh(db_event, attribute_names=['participations'])
 
     return db_event
 
 
 async def update_event(db: AsyncSession, event_id: int, event_data: EventUpdate) -> Optional[Event]:
-    result = await db.execute(select(Event).where(Event.id == event_id))
+    """อัปเดตข้อมูลงาน"""
+    result = await db.execute(
+        select(Event)
+        .options(selectinload(Event.participations))
+        .where(Event.id == event_id)
+    )
     event = result.scalar_one_or_none()
+
     if not event:
         return None
 
@@ -140,11 +145,13 @@ async def update_event(db: AsyncSession, event_id: int, event_data: EventUpdate)
         setattr(event, key, value)
 
     await db.commit()
-    await db.refresh(event)
+    await db.refresh(event, attribute_names=['participations'])
+
     return event
 
 
 async def delete_event(db: AsyncSession, event_id: int) -> bool:
+    """ลบงาน"""
     try:
         result = await db.execute(
             select(Event)
@@ -166,8 +173,33 @@ async def delete_event(db: AsyncSession, event_id: int) -> bool:
         raise
 
 
-async def get_events_by_creator(db: AsyncSession, creator_id: int):
+async def get_events_by_creator(db: AsyncSession, creator_id: int) -> List[Event]:
+    """ดึงงานที่สร้างโดย user คนนั้น"""
     result = await db.execute(
-        select(Event).where(Event.created_by == creator_id).order_by(Event.created_at.desc())
+        select(Event)
+        .options(selectinload(Event.participations))
+        .where(Event.created_by == creator_id)
+        .order_by(Event.created_at.desc())
     )
     return result.scalars().all()
+
+
+async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any]:
+    """
+    ตรวจสอบความจุของงาน
+    ใช้สำหรับตรวจสอบก่อนให้ join
+    """
+    event = await get_event_by_id(db, event_id)
+
+    if not event:
+        return None
+
+    return {
+        "event_id": event.id,
+        "title": event.title,
+        "current_participants": event.participant_count,
+        "max_participants": event.max_participants,
+        "remaining_slots": event.remaining_slots,
+        "is_full": event.is_full,
+        "can_join": not event.is_full and event.is_active and event.is_published
+    }

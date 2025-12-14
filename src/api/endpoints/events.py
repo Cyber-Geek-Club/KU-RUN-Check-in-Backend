@@ -25,15 +25,22 @@ async def get_events(
         skip: int = 0,
         limit: int = 100,
         is_published: Optional[bool] = None,
-        include_stats: bool = Query(False, description="Include participant statistics"),
+        include_stats: bool = Query(False, description="Include detailed participant statistics"),
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Get all events
+    Get all events with participant count
     Requires: Any authenticated user
 
-    - **include_stats**: ถ้าเป็น true จะรวมข้อมูลจำนวนผู้เข้าร่วมและสถิติด้วย
+    **จำนวนผู้เข้าร่วม (participant_count) จะแสดงอัตโนมัติเสมอ**
+
+    - **include_stats**: ถ้าเป็น true จะรวมสถิติละเอียดด้วย (by_status, by_role)
+    - **Response รวม:**
+      - `participant_count` - จำนวนผู้เข้าร่วมทั้งหมด (แสดงเสมอ)
+      - `remaining_slots` - ที่ว่างที่เหลือ (แสดงเสมอ)
+      - `is_full` - งานเต็มหรือไม่ (แสดงเสมอ)
+      - `participant_stats` - สถิติละเอียด (ถ้า include_stats=true)
     """
     return await event_crud.get_events(db, skip, limit, is_published, include_stats)
 
@@ -41,15 +48,17 @@ async def get_events(
 @router.get("/{event_id}", response_model=EventRead)
 async def get_event(
         event_id: int,
-        include_stats: bool = Query(False, description="Include participant statistics"),
+        include_stats: bool = Query(False, description="Include detailed participant statistics"),
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Get event by ID
+    Get event by ID with participant count
     Requires: Any authenticated user
 
-    - **include_stats**: ถ้าเป็น true จะรวมข้อมูลจำนวนผู้เข้าร่วมและสถิติด้วย
+    **จำนวนผู้เข้าร่วม (participant_count) จะแสดงอัตโนมัติเสมอ**
+
+    - **include_stats**: ถ้าเป็น true จะรวมสถิติละเอียดด้วย
     """
     event = await event_crud.get_event_by_id(db, event_id, include_stats)
     if not event:
@@ -60,6 +69,36 @@ async def get_event(
     return event
 
 
+@router.get("/{event_id}/capacity")
+async def check_event_capacity(
+        event_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Check event capacity and availability
+    Requires: Any authenticated user
+
+    ตรวจสอบความจุและสถานะของงาน - ใช้ก่อน join
+
+    **Returns:**
+    - `current_participants` - จำนวนผู้เข้าร่วมปัจจุบัน
+    - `max_participants` - จำนวนสูงสุด (null = ไม่จำกัด)
+    - `remaining_slots` - ที่ว่างที่เหลือ (-1 = ไม่จำกัด)
+    - `is_full` - งานเต็มหรือไม่
+    - `can_join` - สามารถลงทะเบียนได้หรือไม่
+    """
+    capacity = await event_crud.check_event_capacity(db, event_id)
+
+    if not capacity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+
+    return capacity
+
+
 @router.get("/{event_id}/stats", response_model=ParticipantStats)
 async def get_event_stats(
         event_id: int,
@@ -67,12 +106,14 @@ async def get_event_stats(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Get participant statistics for an event
+    Get detailed participant statistics for an event
     Requires: Any authenticated user
 
-    ดึงสถิติผู้เข้าร่วมของงาน (จำนวนทั้งหมด, แยกตาม status และ role)
+    ดึงสถิติผู้เข้าร่วมแบบละเอียด:
+    - จำนวนทั้งหมด
+    - แยกตาม status (joined, checked_in, completed, etc.)
+    - แยกตาม role (student, officer, staff, organizer)
     """
-    # Check if event exists
     event = await event_crud.get_event_by_id(db, event_id)
     if not event:
         raise HTTPException(
@@ -95,7 +136,6 @@ async def get_event_with_participants(
 
     ดึงข้อมูลงานพร้อมรายชื่อผู้เข้าร่วมทั้งหมด (เฉพาะ staff/organizer)
     """
-    # Get event with stats
     event = await event_crud.get_event_by_id(db, event_id, include_stats=True)
     if not event:
         raise HTTPException(
@@ -103,10 +143,8 @@ async def get_event_with_participants(
             detail="Event not found"
         )
 
-    # Get participant list
     participants = await event_crud.get_event_participants(db, event_id)
 
-    # Return combined data
     event_dict = {
         "id": event.id,
         "title": event.title,
@@ -123,6 +161,8 @@ async def get_event_with_participants(
         "created_at": event.created_at,
         "updated_at": event.updated_at,
         "participant_count": event.participant_count,
+        "remaining_slots": event.remaining_slots,
+        "is_full": event.is_full,
         "participant_stats": event.participant_stats,
         "participants": participants
     }
@@ -139,6 +179,8 @@ async def create_event(
     """
     Create new event
     Requires: Organizer role
+
+    **Response จะรวม participant_count (0) อัตโนมัติ**
     """
     return await event_crud.create_event(db, event, current_user.id)
 
@@ -153,6 +195,8 @@ async def update_event(
     """
     Update event
     Requires: Organizer role
+
+    **Response จะรวม participant_count อัตโนมัติ**
     """
     event = await event_crud.update_event(db, event_id, event_data)
     if not event:
@@ -191,5 +235,7 @@ async def get_events_by_creator(
     """
     Get events created by specific user
     Requires: Organizer role
+
+    **Response จะรวม participant_count ของแต่ละงานอัตโนมัติ**
     """
     return await event_crud.get_events_by_creator(db, user_id)

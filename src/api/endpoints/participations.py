@@ -5,7 +5,7 @@ from src.api.dependencies.auth import (
     get_current_user,
     require_staff_or_organizer
 )
-from src.crud import event_participation_crud, reward_crud
+from src.crud import event_participation_crud, reward_crud, event_crud
 from src.schemas.event_participation_schema import (
     EventParticipationCreate,
     EventParticipationRead,
@@ -26,12 +26,38 @@ async def join_event(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Join an event
+    Join an event with capacity check
     Requires: Any authenticated user
 
-    - **event_id**: ID ของงานที่ต้องการเข้าร่วม
-    - Returns: ข้อมูล participation พร้อม join_code (5 หลัก)
+    **ระบบจะตรวจสอบความจุก่อนอนุญาตให้ join**
+
+    - ตรวจสอบว่างานเต็มหรือไม่
+    - ตรวจสอบว่างาน active และ published หรือไม่
+    - สร้าง join_code (5 หลัก) อัตโนมัติ
+    - ส่งการแจ้งเตือนอัตโนมัติ
     """
+    # ตรวจสอบความจุก่อน
+    capacity = await event_crud.check_event_capacity(db, participation.event_id)
+
+    if not capacity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+
+    if not capacity["can_join"]:
+        if capacity["is_full"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Event is full. Maximum participants: {capacity['max_participants']}"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Event is not available for registration"
+            )
+
+    # สร้าง participation
     return await event_participation_crud.create_participation(db, participation, current_user.id)
 
 
@@ -47,7 +73,6 @@ async def get_user_participations(
 
     ดึงข้อมูลการเข้าร่วมงานทั้งหมดของผู้ใช้
     """
-    # Users can only view their own participations, unless they're staff/organizer
     if current_user.id != user_id and current_user.role.value not in ['staff', 'organizer']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -90,7 +115,6 @@ async def get_participation(
             detail="Participation not found"
         )
 
-    # Check authorization
     if participation.user_id != current_user.id and current_user.role.value not in ['staff', 'organizer']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -112,6 +136,7 @@ async def check_in(
 
     Staff ใช้ join_code (5 หลัก) เพื่อ check-in ผู้เข้าร่วม
     - Status จะเปลี่ยนจาก JOINED → CHECKED_IN
+    - ส่งการแจ้งเตือนอัตโนมัติ
     """
     participation = await event_participation_crud.check_in_participation(
         db, check_in_data.join_code, current_user.id
@@ -137,8 +162,8 @@ async def submit_proof(
 
     ผู้เข้าร่วมส่งหลักฐานการวิ่ง (รูปภาพ)
     - Status จะเปลี่ยนจาก CHECKED_IN → PROOF_SUBMITTED
+    - ส่งการแจ้งเตือนอัตโนมัติ
     """
-    # Verify ownership
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
         raise HTTPException(
@@ -177,6 +202,7 @@ async def verify_completion(
     - อนุมัติ: Status → COMPLETED, ได้ completion_code (10 ตัวอักษร)
     - ปฏิเสธ: Status → REJECTED
     - ระบบจะตรวจสอบและมอบรางวัลอัตโนมัติถ้าผ่าน
+    - ส่งการแจ้งเตือนอัตโนมัติ
     """
     participation = await event_participation_crud.verify_completion(
         db,
@@ -191,7 +217,7 @@ async def verify_completion(
             detail="Invalid participation or proof not submitted"
         )
 
-    # Check and award rewards if completed
+    # ตรวจสอบและมอบรางวัลถ้าอนุมัติ
     if verify_data.approved:
         await reward_crud.check_and_award_rewards(db, participation.user_id)
 
