@@ -174,12 +174,40 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
     return participation
 
 
-async def cancel_participation(db: AsyncSession, participation_id: int, user_id: int) -> Optional[EventParticipation]:
+async def cancel_participation(
+        db: AsyncSession,
+        participation_id: int,
+        user_id: int,
+        cancellation_reason: str
+) -> Optional[EventParticipation]:
+    """
+    ยกเลิกการเข้าร่วมงาน พร้อมบันทึกเหตุผล
+
+    Args:
+        db: Database session
+        participation_id: ID ของการเข้าร่วม
+        user_id: ID ของ user ที่ยกเลิก
+        cancellation_reason: เหตุผลในการยกเลิก (จำเป็น)
+
+    Returns:
+        EventParticipation ที่ถูกยกเลิก หรือ None ถ้าไม่พบ/ไม่มีสิทธิ์
+    """
     participation = await get_participation_by_id(db, participation_id)
+
+    # ตรวจสอบว่ามี participation และเป็นของ user นั้น
     if not participation or participation.user_id != user_id:
         return None
 
+    # ตรวจสอบว่ายังสามารถยกเลิกได้ (ยังไม่ completed หรือ rejected)
+    if participation.status in [ParticipationStatus.COMPLETED, ParticipationStatus.REJECTED]:
+        return None
+
+    # อัปเดตสถานะเป็น cancelled พร้อมเหตุผล
     participation.status = ParticipationStatus.CANCELLED
+    participation.cancellation_reason = cancellation_reason
+    participation.cancelled_at = datetime.now(timezone.utc)
+
     await db.commit()
     await db.refresh(participation)
+
     return participation

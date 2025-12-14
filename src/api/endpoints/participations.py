@@ -11,9 +11,11 @@ from src.schemas.event_participation_schema import (
     EventParticipationRead,
     EventParticipationCheckIn,
     EventParticipationProofSubmit,
-    EventParticipationVerify
+    EventParticipationVerify,
+    EventParticipationCancel
 )
 from src.models.user import User
+from src.models.event_participation import ParticipationStatus
 from typing import List
 
 router = APIRouter()
@@ -224,25 +226,83 @@ async def verify_completion(
     return participation
 
 
-@router.delete("/{participation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{participation_id}/cancel", response_model=EventParticipationRead)
 async def cancel_participation(
         participation_id: int,
+        cancel_data: EventParticipationCancel,
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Cancel participation
+    Cancel participation with reason
     Requires: Own participation
 
-    ยกเลิกการเข้าร่วมงาน
+    ยกเลิกการเข้าร่วมงาน (ต้องระบุเหตุผล)
+
+    **Rules:**
+    - ต้องระบุเหตุผลในการยกเลิก (1-500 ตัวอักษร)
+    - ไม่สามารถยกเลิกได้ถ้า status เป็น COMPLETED หรือ REJECTED
     - Status → CANCELLED
+    - บันทึกเวลาที่ยกเลิก (cancelled_at)
+
+    **Examples of cancellation_reason:**
+    - "มีธุระส่วนตัวฉุกเฉิน"
+    - "ติดภารกิจ"
+    - "สุขภาพไม่พร้อม"
+    - "เปลี่ยนใจ"
     """
     participation = await event_participation_crud.cancel_participation(
-        db, participation_id, current_user.id
+        db, participation_id, current_user.id, cancel_data.cancellation_reason
     )
+
+    if not participation:
+        # ตรวจสอบว่ามี participation หรือไม่
+        existing = await event_participation_crud.get_participation_by_id(db, participation_id)
+
+        if not existing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Participation not found"
+            )
+
+        if existing.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only cancel your own participation"
+            )
+
+        if existing.status in [ParticipationStatus.COMPLETED, ParticipationStatus.REJECTED]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot cancel participation with status: {existing.status.value}"
+            )
+
+    return participation
+
+
+@router.delete("/{participation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_participation(
+        participation_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    Delete participation (Staff/Organizer only)
+    Requires: Staff or Organizer role
+
+    ลบการเข้าร่วมถาวร (เฉพาะ Staff/Organizer)
+
+    **Note:** ผู้ใช้ทั่วไปควรใช้ `/cancel` แทน
+    """
+    participation = await event_participation_crud.get_participation_by_id(db, participation_id)
+
     if not participation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participation not found or unauthorized"
+            detail="Participation not found"
         )
+
+    await db.delete(participation)
+    await db.commit()
+
     return None
