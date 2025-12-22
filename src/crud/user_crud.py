@@ -6,10 +6,6 @@ from src.schemas.user_schema import (
     StudentCreate, OfficerCreate, StaffCreate, OrganizerCreate
 )
 from typing import Optional, Union
-from datetime import datetime, timedelta
-from src.models.user import User
-from src.schemas.user_schema import UserCreate, UserUpdate
-from typing import Optional
 from datetime import datetime, timedelta, timezone
 import bcrypt
 import secrets
@@ -61,7 +57,7 @@ async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
-    """Legacy create_user - สำหรับ backward compatibility"""
+    """Legacy create_user - for backward compatibility"""
     hashed_password = hash_password(user.password)
     verification_token = generate_verification_token()
 
@@ -71,15 +67,12 @@ async def create_user(db: AsyncSession, user: UserCreate) -> User:
         title=user.title,
         first_name=user.first_name,
         last_name=user.last_name,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        title=user.title,
         role=user.role,
         is_verified=False,
         verification_token=verification_token,
         verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
-    
+
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
@@ -105,7 +98,7 @@ async def create_student(db: AsyncSession, student: StudentCreate) -> Student:
         verification_token=verification_token,
         verification_token_expires=datetime.utcnow() + timedelta(hours=24)
     )
-    
+
     db.add(db_student)
     await db.commit()
     await db.refresh(db_student)
@@ -129,7 +122,7 @@ async def create_officer(db: AsyncSession, officer: OfficerCreate) -> Officer:
         verification_token=verification_token,
         verification_token_expires=datetime.utcnow() + timedelta(hours=24)
     )
-    
+
     db.add(db_officer)
     await db.commit()
     await db.refresh(db_officer)
@@ -153,7 +146,7 @@ async def create_staff(db: AsyncSession, staff: StaffCreate) -> Staff:
         verification_token=verification_token,
         verification_token_expires=datetime.utcnow() + timedelta(hours=24)
     )
-    
+
     db.add(db_staff)
     await db.commit()
     await db.refresh(db_staff)
@@ -176,7 +169,7 @@ async def create_organizer(db: AsyncSession, organizer: OrganizerCreate) -> Orga
         verification_token=verification_token,
         verification_token_expires=datetime.utcnow() + timedelta(hours=24)
     )
-    
+
     db.add(db_organizer)
     await db.commit()
     await db.refresh(db_organizer)
@@ -206,7 +199,6 @@ async def verify_user_email(db: AsyncSession, token: str) -> Optional[User]:
     user.verification_token_expires = None
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -222,7 +214,6 @@ async def resend_verification_email(db: AsyncSession, email: str) -> Optional[Us
     user.verification_token_expires = datetime.now(timezone.utc) + timedelta(hours=24)
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -236,7 +227,6 @@ async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> 
         setattr(user, key, value)
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -261,7 +251,6 @@ async def request_password_reset(db: AsyncSession, email: str) -> Optional[User]
     user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -280,21 +269,19 @@ async def reset_password(db: AsyncSession, token: str, new_password: str) -> Opt
     user.reset_token_expires = None
 
     await db.commit()
-    await db.refresh(user)
     return user
 
 
 async def increment_failed_login(db: AsyncSession, user: User) -> User:
     """Increment failed login attempts and lock account if threshold reached"""
     user.failed_login_attempts += 1
-    
+
     # Lock account if failed attempts reach 10
     if user.failed_login_attempts >= 10:
         user.is_locked = True
         user.locked_at = datetime.utcnow()
-    
+
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -302,7 +289,6 @@ async def reset_failed_login(db: AsyncSession, user: User) -> User:
     """Reset failed login attempts on successful login"""
     user.failed_login_attempts = 0
     await db.commit()
-    await db.refresh(user)
     return user
 
 
@@ -311,11 +297,10 @@ async def unlock_account(db: AsyncSession, user_id: int) -> Optional[User]:
     user = await get_user_by_id(db, user_id)
     if not user:
         return None
-    
+
     user.is_locked = False
     user.failed_login_attempts = 0
     user.locked_at = None
-    
+
     await db.commit()
-    await db.refresh(user)
     return user

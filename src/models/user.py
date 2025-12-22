@@ -66,6 +66,7 @@ class User(Base):
     )
     user_rewards = relationship("UserReward", back_populates="user")
     password_reset_logs = relationship("PasswordResetLog", back_populates="user")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 
 class Student(User):
@@ -111,8 +112,7 @@ class Organizer(User):
     }
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    # Organizer ไม่มีข้อมูลเพิ่มเติม - เก็บแค่ข้อมูลพื้นฐานจาก User table
-    # Add property to get full name
+
     @property
     def name(self):
         """Get full name"""

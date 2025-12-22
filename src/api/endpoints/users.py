@@ -23,18 +23,13 @@ from src.utils.token import create_access_token
 router = APIRouter()
 
 
-async def get_db():
-    async with SessionLocal() as session:
-        yield session
-
-
 # ========== Registration Endpoints แยกตาม Role ==========
 
 @router.post("/register/student", response_model=StudentRead, status_code=status.HTTP_201_CREATED)
 async def register_student(student: StudentCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new student
-    
+
     สมัครสมาชิกนักศึกษาใหม่
     """
     # Check if email already exists
@@ -44,7 +39,7 @@ async def register_student(student: StudentCreate, db: AsyncSession = Depends(ge
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Check if nisit_id already exists
     existing_student = await user_crud.get_student_by_nisit_id(db, student.nisit_id)
     if existing_student:
@@ -52,20 +47,20 @@ async def register_student(student: StudentCreate, db: AsyncSession = Depends(ge
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Nisit ID already registered"
         )
-    
+
     # Create student
     new_student = await user_crud.create_student(db, student)
-    
+
     # Send verification email
     email_sent = send_verification_email(
         new_student.email,
         new_student.verification_token,
         f"{new_student.first_name} {new_student.last_name}"
     )
-    
+
     if not email_sent:
         print(f"Warning: Failed to send verification email to {new_student.email}")
-    
+
     return new_student
 
 
@@ -73,7 +68,7 @@ async def register_student(student: StudentCreate, db: AsyncSession = Depends(ge
 async def register_officer(officer: OfficerCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new officer
-    
+
     สมัครสมาชิกเจ้าหน้าที่ใหม่
     """
     # Check if email already exists
@@ -83,20 +78,20 @@ async def register_officer(officer: OfficerCreate, db: AsyncSession = Depends(ge
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Create officer
     new_officer = await user_crud.create_officer(db, officer)
-    
+
     # Send verification email
     email_sent = send_verification_email(
         new_officer.email,
         new_officer.verification_token,
         f"{new_officer.first_name} {new_officer.last_name}"
     )
-    
+
     if not email_sent:
         print(f"Warning: Failed to send verification email to {new_officer.email}")
-    
+
     return new_officer
 
 
@@ -104,7 +99,7 @@ async def register_officer(officer: OfficerCreate, db: AsyncSession = Depends(ge
 async def register_staff(staff: StaffCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new staff member
-    
+
     สมัครสมาชิกพนักงานใหม่
     """
     # Check if email already exists
@@ -114,20 +109,20 @@ async def register_staff(staff: StaffCreate, db: AsyncSession = Depends(get_db))
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Create staff
     new_staff = await user_crud.create_staff(db, staff)
-    
+
     # Send verification email
     email_sent = send_verification_email(
         new_staff.email,
         new_staff.verification_token,
         f"{new_staff.first_name} {new_staff.last_name}"
     )
-    
+
     if not email_sent:
         print(f"Warning: Failed to send verification email to {new_staff.email}")
-    
+
     return new_staff
 
 
@@ -135,7 +130,7 @@ async def register_staff(staff: StaffCreate, db: AsyncSession = Depends(get_db))
 async def register_organizer(organizer: OrganizerCreate, db: AsyncSession = Depends(get_db)):
     """
     Register a new organizer (no additional fields required)
-    
+
     สมัครสมาชิกผู้จัดงานใหม่ (ไม่ต้องกรอกข้อมูลเพิ่มเติม)
     """
     # Check if email already exists
@@ -145,29 +140,25 @@ async def register_organizer(organizer: OrganizerCreate, db: AsyncSession = Depe
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Create organizer
     new_organizer = await user_crud.create_organizer(db, organizer)
-    
+
     # Send verification email
     email_sent = send_verification_email(
         new_organizer.email,
         new_organizer.verification_token,
         f"{new_organizer.first_name} {new_organizer.last_name}"
     )
-    
+
     if not email_sent:
         print(f"Warning: Failed to send verification email to {new_organizer.email}")
-    
+
     return new_organizer
 
 
 # ========== Legacy Registration Endpoint (for backward compatibility) ==========
 
-@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Register a new user and send verification email (Legacy endpoint)
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     """
@@ -279,33 +270,33 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     เข้าสู่ระบบ
     """
     user = await user_crud.get_user_by_email(db, credentials.email)
-    
+
     # Check if user exists
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
-    
+
     # Check if account is locked
     if user.is_locked:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail=f"Account is locked due to too many failed login attempts. Please contact an organizer to unlock your account."
         )
-    
+
     # Verify password
     if not user_crud.verify_password(credentials.password, user.password_hash):
         # Increment failed login attempts
         await user_crud.increment_failed_login(db, user)
-        
+
         remaining_attempts = 10 - user.failed_login_attempts
         if remaining_attempts <= 0:
             raise HTTPException(
                 status_code=status.HTTP_423_LOCKED,
                 detail="Account has been locked due to too many failed login attempts. Please contact an organizer to unlock your account."
             )
-        
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Incorrect email or password. {remaining_attempts} attempts remaining before account lock."
@@ -321,7 +312,6 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     if user.failed_login_attempts > 0:
         await user_crud.reset_failed_login(db, user)
 
-    # TODO: Generate JWT token
     # Generate JWT access token
     access_token = create_access_token({"sub": str(user.id)})
 
@@ -485,15 +475,15 @@ async def delete_user(
 
 @router.post("/{user_id}/unlock", response_model=UserRead)
 async def unlock_user_account(
-    user_id: int,
-    organizer_id: int,
-    db: AsyncSession = Depends(get_db)
+        user_id: int,
+        organizer_id: int,
+        db: AsyncSession = Depends(get_db)
 ):
     """
     Unlock a locked user account (Organizer only)
-    
+
     ปลดล็อคบัญชีผู้ใช้ (สำหรับ organizer เท่านั้น)
-    
+
     Parameters:
     - user_id: ID of the user to unlock
     - organizer_id: ID of the organizer performing the unlock (for verification)
@@ -505,7 +495,7 @@ async def unlock_user_account(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only organizers can unlock accounts"
         )
-    
+
     # Unlock the user account
     user = await user_crud.unlock_account(db, user_id)
     if not user:
@@ -513,5 +503,5 @@ async def unlock_user_account(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     return user

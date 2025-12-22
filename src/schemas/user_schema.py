@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, computed_field
 from datetime import datetime
 from typing import Optional, Union
 from src.models.user import UserRole
@@ -16,12 +16,14 @@ class UserBase(BaseModel):
     last_name: str
     title: Optional[str] = None
 
+
 # ========== Student Schemas ==========
 class StudentCreate(UserBase):
     password: str
     nisit_id: str  # Required for students
-    major: str     # Required for students
-    faculty: str   # Required for students
+    major: str  # Required for students
+    faculty: str  # Required for students
+
 
 class StudentRead(UserBase):
     id: int
@@ -35,12 +37,13 @@ class StudentRead(UserBase):
     locked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    
+
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
     else:
         class Config:
             orm_mode = True
+
 
 class StudentUpdate(BaseModel):
     title: Optional[str] = None
@@ -49,10 +52,12 @@ class StudentUpdate(BaseModel):
     major: Optional[str] = None
     faculty: Optional[str] = None
 
+
 # ========== Officer Schemas ==========
 class OfficerCreate(UserBase):
     password: str
     department: str  # Required for officers
+
 
 class OfficerRead(UserBase):
     id: int
@@ -64,12 +69,13 @@ class OfficerRead(UserBase):
     locked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    
+
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
     else:
         class Config:
             orm_mode = True
+
 
 class OfficerUpdate(BaseModel):
     title: Optional[str] = None
@@ -77,10 +83,12 @@ class OfficerUpdate(BaseModel):
     last_name: Optional[str] = None
     department: Optional[str] = None
 
+
 # ========== Staff Schemas ==========
 class StaffCreate(UserBase):
     password: str
     department: str  # Required for staff
+
 
 class StaffRead(UserBase):
     id: int
@@ -92,12 +100,13 @@ class StaffRead(UserBase):
     locked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    
+
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
     else:
         class Config:
             orm_mode = True
+
 
 class StaffUpdate(BaseModel):
     title: Optional[str] = None
@@ -105,10 +114,12 @@ class StaffUpdate(BaseModel):
     last_name: Optional[str] = None
     department: Optional[str] = None
 
+
 # ========== Organizer Schemas ==========
 class OrganizerCreate(UserBase):
     password: str
     # Organizer ไม่มี fields เพิ่มเติม - เก็บแค่ข้อมูลพื้นฐาน
+
 
 class OrganizerRead(UserBase):
     id: int
@@ -119,17 +130,19 @@ class OrganizerRead(UserBase):
     locked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    
+
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
     else:
         class Config:
             orm_mode = True
 
+
 class OrganizerUpdate(BaseModel):
     title: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+
 
 # ========== Legacy/Generic Schemas (for backward compatibility) ==========
 
@@ -158,10 +171,6 @@ class UserUpdate(BaseModel):
     title: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    nisit_id: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    title: Optional[str] = None
     major: Optional[str] = None
     faculty: Optional[str] = None
     department: Optional[str] = None
@@ -184,12 +193,16 @@ class UserRead(BaseModel):
     locked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    
+
     @property
     def full_name(self) -> str:
-        return f"{self.first_name} {self.last_name}"
-    # Add computed full name field
-    name: str
+        """Get full name from first and last name"""
+        parts = []
+        if self.title:
+            parts.append(self.title)
+        parts.append(self.first_name)
+        parts.append(self.last_name)
+        return " ".join(parts)
 
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
