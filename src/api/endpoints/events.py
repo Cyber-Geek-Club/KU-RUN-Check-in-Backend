@@ -6,7 +6,14 @@ from src.api.dependencies import (
     get_current_user
 )
 from src.crud import event_crud
-from src.schemas.event_schema import EventCreate, EventUpdate, EventRead
+from src.schemas.event_schema import (
+    EventCreate,
+    EventUpdate,
+    EventRead,
+    EventWithParticipants,
+    ParticipantStats,
+    LeaderboardEntry
+)
 from src.models.user import User
 from typing import List, Optional
 
@@ -110,3 +117,35 @@ async def get_events_by_creator(
     Requires: Organizer role
     """
     return await event_crud.get_events_by_creator(db, user_id)
+
+
+@router.get("/{event_id}/leaderboard", response_model=List[LeaderboardEntry])
+async def get_event_leaderboard(
+        event_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Get event leaderboard - ตารางอันดับผู้ผ่านเส้นชัย
+    Requires: Any authenticated user
+
+    ดึงรายชื่อผู้ที่ผ่านเส้นชัยเรียงตามอันดับ (1st, 2nd, 3rd, ...)
+    
+    **Returns:**
+    - `rank` - อันดับที่ผ่านเส้นชัย (1 = คนแรก)
+    - `user_id`, `first_name`, `last_name`, `full_name` - ข้อมูลผู้เข้าร่วม
+    - `role` - บทบาทของผู้เข้าร่วม
+    - `completion_code` - รหัสยืนยันการผ่านเส้นชัย
+    - `completed_at` - เวลาที่ผ่านเส้นชัย
+    
+    **Note:** เฉพาะผู้ที่มี status = COMPLETED เท่านั้นที่จะแสดงในตารางอันดับ
+    """
+    # ตรวจสอบว่า event มีอยู่จริง
+    event = await event_crud.get_event_by_id(db, event_id)
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    
+    return await event_crud.get_event_leaderboard(db, event_id)

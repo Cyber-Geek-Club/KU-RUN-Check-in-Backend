@@ -1,8 +1,11 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 from src.models.event import Event
+from src.models.event_participation import EventParticipation, ParticipationStatus
+from src.models.user import User
 from src.schemas.event_schema import EventCreate, EventUpdate
-from typing import Optional
+from typing import Optional, Dict, List
 
 
 async def get_events(db: AsyncSession, skip: int = 0, limit: int = 100, is_published: Optional[bool] = None):
@@ -60,3 +63,44 @@ async def get_events_by_creator(db: AsyncSession, creator_id: int):
         select(Event).where(Event.created_by == creator_id).order_by(Event.created_at.desc())
     )
     return result.scalars().all()
+
+
+async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[Dict]:
+    """
+    ดึง Leaderboard - รายชื่อผู้ที่ผ่านเส้นชัยเรียงตามอันดับ
+    
+    Args:
+        db: Database session
+        event_id: ID ของงาน
+        
+    Returns:
+        List ของผู้ผ่านเส้นชัยเรียงตาม completion_rank
+    """
+    result = await db.execute(
+        select(EventParticipation, User)
+        .join(User, EventParticipation.user_id == User.id)
+        .where(
+            EventParticipation.event_id == event_id,
+            EventParticipation.status == ParticipationStatus.COMPLETED,
+            EventParticipation.completion_rank.isnot(None)
+        )
+        .order_by(EventParticipation.completion_rank.asc())
+    )
+    
+    participations = result.all()
+    
+    leaderboard = []
+    for participation, user in participations:
+        leaderboard.append({
+            "rank": participation.completion_rank,
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": f"{user.first_name} {user.last_name}",
+            "role": user.role.value,
+            "completion_code": participation.completion_code,
+            "completed_at": participation.completed_at,
+            "participation_id": participation.id
+        })
+    
+    return leaderboard

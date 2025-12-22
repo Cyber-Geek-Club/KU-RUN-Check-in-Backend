@@ -1,5 +1,7 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.schemas.event_participation_schema import EventParticipationCreate
 from datetime import datetime, timezone
@@ -104,12 +106,24 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
         return None
 
     if approved:
+        # คำนวณ completion_rank (อันดับที่ผ่านเส้นชัย)
+        result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(
+                EventParticipation.event_id == participation.event_id,
+                EventParticipation.status == ParticipationStatus.COMPLETED
+            )
+        )
+        current_completed_count = result.scalar() or 0
+        next_rank = current_completed_count + 1
+
         # Generate completion code
         completion_code = generate_completion_code()
         participation.completion_code = completion_code
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_by = staff_id
         participation.completed_at = datetime.now(timezone.utc)
+        participation.completion_rank = next_rank  # กำหนดอันดับ
     else:
         participation.status = ParticipationStatus.REJECTED
         participation.rejection_reason = rejection_reason

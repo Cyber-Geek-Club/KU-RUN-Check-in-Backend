@@ -30,6 +30,7 @@ class EventParticipationRead(EventParticipationBase):
     user_id: int
     join_code: str
     completion_code: Optional[str] = None
+    completion_rank: Optional[int] = None  # อันดับที่ผ่านเส้นชัย
     status: ParticipationStatus
     proof_image_url: Optional[str] = None
     proof_submitted_at: Optional[datetime] = None
