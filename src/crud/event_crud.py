@@ -1,10 +1,11 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from src.models.event import Event
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.user import User
-from src.schemas.event_schema import EventCreate, EventUpdate
+from src.schemas.event_schema import EventCreate, EventUpdate, ParticipantStats, ParticipantInfo, LeaderboardEntry
 from typing import Optional, Dict, List
 
 
@@ -175,14 +176,14 @@ async def get_events_by_creator(db: AsyncSession, creator_id: int) -> List[Event
     return result.scalars().all()
 
 
-async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[Dict]:
+async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[LeaderboardEntry]:
     """
     ดึง Leaderboard - รายชื่อผู้ที่ผ่านเส้นชัยเรียงตามอันดับ
-    
+
     Args:
         db: Database session
         event_id: ID ของงาน
-        
+
     Returns:
         List ของผู้ผ่านเส้นชัยเรียงตาม completion_rank
     """
@@ -196,24 +197,26 @@ async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[Dict]:
         )
         .order_by(EventParticipation.completion_rank.asc())
     )
-    
+
     participations = result.all()
-    
+
     leaderboard = []
     for participation, user in participations:
-        leaderboard.append({
-            "rank": participation.completion_rank,
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "full_name": f"{user.first_name} {user.last_name}",
-            "role": user.role.value,
-            "completion_code": participation.completion_code,
-            "completed_at": participation.completed_at,
-            "participation_id": participation.id
-        })
-    
+        leaderboard.append(LeaderboardEntry(
+            rank=participation.completion_rank,
+            user_id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            full_name=f"{user.first_name} {user.last_name}",
+            role=user.role.value,
+            completion_code=participation.completion_code,
+            completed_at=participation.completed_at,
+            participation_id=participation.id
+        ))
+
     return leaderboard
+
+
 async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any]:
     """ตรวจสอบความจุของงาน"""
     event = await get_event_by_id(db, event_id)
