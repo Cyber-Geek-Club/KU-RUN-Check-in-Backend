@@ -1,13 +1,14 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.event import Event
 from src.schemas.event_participation_schema import EventParticipationCreate
 from src.crud import notification_crud
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict
+from decimal import Decimal
 import random
 import string
 
@@ -110,12 +111,21 @@ async def check_in_participation(db: AsyncSession, join_code: str, staff_id: int
     return participation
 
 
-async def submit_proof(db: AsyncSession, participation_id: int, proof_image_url: str) -> Optional[EventParticipation]:
+async def submit_proof(
+        db: AsyncSession,
+        participation_id: int,
+        proof_image_url: str,
+        strava_link: Optional[str] = None,
+        actual_distance_km: Optional[Decimal] = None
+) -> Optional[EventParticipation]:
+    """ส่งหลักฐานการวิ่ง พร้อม Strava link และระยะทางจริง"""
     participation = await get_participation_by_id(db, participation_id)
     if not participation or participation.status != ParticipationStatus.CHECKED_IN:
         return None
 
     participation.proof_image_url = proof_image_url
+    participation.strava_link = strava_link
+    participation.actual_distance_km = actual_distance_km
     participation.proof_submitted_at = datetime.now(timezone.utc)
     participation.status = ParticipationStatus.PROOF_SUBMITTED
 
@@ -132,18 +142,14 @@ async def submit_proof(db: AsyncSession, participation_id: int, proof_image_url:
     return participation
 
 
-async def resubmit_proof(db: AsyncSession, participation_id: int, proof_image_url: str) -> Optional[EventParticipation]:
-    """
-    ส่งหลักฐานใหม่หลังจากถูกปฏิเสธ
-
-    Args:
-        db: Database session
-        participation_id: ID ของการเข้าร่วม
-        proof_image_url: URL รูปภาพหลักฐานใหม่
-
-    Returns:
-        EventParticipation ที่อัปเดตแล้ว หรือ None ถ้าไม่สามารถส่งใหม่ได้
-    """
+async def resubmit_proof(
+        db: AsyncSession,
+        participation_id: int,
+        proof_image_url: str,
+        strava_link: Optional[str] = None,
+        actual_distance_km: Optional[Decimal] = None
+) -> Optional[EventParticipation]:
+    """ส่งหลักฐานใหม่หลังจากถูกปฏิเสธ"""
     participation = await get_participation_by_id(db, participation_id)
 
     # ตรวจสอบว่าต้องเป็น status REJECTED เท่านั้น
@@ -152,6 +158,8 @@ async def resubmit_proof(db: AsyncSession, participation_id: int, proof_image_ur
 
     # อัปเดตหลักฐานใหม่
     participation.proof_image_url = proof_image_url
+    participation.strava_link = strava_link
+    participation.actual_distance_km = actual_distance_km
     participation.proof_submitted_at = datetime.now(timezone.utc)
     participation.status = ParticipationStatus.PROOF_SUBMITTED
 
@@ -180,24 +188,12 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
         return None
 
     if approved:
-        # คำนวณ completion_rank (อันดับที่ผ่านเส้นชัย)
-        result = await db.execute(
-            select(func.count(EventParticipation.id))
-            .where(
-                EventParticipation.event_id == participation.event_id,
-                EventParticipation.status == ParticipationStatus.COMPLETED
-            )
-        )
-        current_completed_count = result.scalar() or 0
-        next_rank = current_completed_count + 1
-
         # Generate completion code
         completion_code = generate_completion_code()
         participation.completion_code = completion_code
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_by = staff_id
         participation.completed_at = datetime.now(timezone.utc)
-        participation.completion_rank = next_rank  # กำหนดอันดับ
 
         await db.commit()
         await db.refresh(participation)
@@ -234,18 +230,7 @@ async def cancel_participation(
         user_id: int,
         cancellation_reason: str
 ) -> Optional[EventParticipation]:
-    """
-    ยกเลิกการเข้าร่วมงาน พร้อมบันทึกเหตุผล
-
-    Args:
-        db: Database session
-        participation_id: ID ของการเข้าร่วม
-        user_id: ID ของ user ที่ยกเลิก
-        cancellation_reason: เหตุผลในการยกเลิก (จำเป็น)
-
-    Returns:
-        EventParticipation ที่ถูกยกเลิก หรือ None ถ้าไม่พบ/ไม่มีสิทธิ์
-    """
+    """ยกเลิกการเข้าร่วมงาน พร้อมบันทึกเหตุผล"""
     participation = await get_participation_by_id(db, participation_id)
 
     # ตรวจสอบว่ามี participation และเป็นของ user นั้น
@@ -265,3 +250,71 @@ async def cancel_participation(
     await db.refresh(participation)
 
     return participation
+
+
+# 🆕 ========== User Statistics Functions ==========
+
+async def get_user_statistics(db: AsyncSession, user_id: int) -> Dict:
+    """ดึงสถิติการวิ่งของผู้ใช้"""
+
+    # 1. จำนวนงานที่ลงทะเบียนทั้งหมด (ไม่นับที่ถูก cancel)
+    total_joined_result = await db.execute(
+        select(func.count(EventParticipation.id))
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.status != ParticipationStatus.CANCELLED
+        )
+    )
+    total_events_joined = total_joined_result.scalar() or 0
+
+    # 2. จำนวนงานที่วิ่งสำเร็จ (COMPLETED)
+    completed_result = await db.execute(
+        select(func.count(EventParticipation.id))
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.status == ParticipationStatus.COMPLETED
+        )
+    )
+    total_events_completed = completed_result.scalar() or 0
+
+    # 3. ระยะทางรวมที่วิ่ง (กม.)
+    distance_result = await db.execute(
+        select(func.sum(EventParticipation.actual_distance_km))
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.status == ParticipationStatus.COMPLETED,
+            EventParticipation.actual_distance_km.isnot(None)
+        )
+    )
+    total_distance = distance_result.scalar()
+    total_distance_km = Decimal(total_distance) if total_distance else Decimal('0.00')
+
+    # 4. คำนวณ completion rate
+    completion_rate = 0.0
+    if total_events_joined > 0:
+        completion_rate = round((total_events_completed / total_events_joined) * 100, 2)
+
+    # 5. จำนวนครั้งที่วิ่งสำเร็จในเดือนนี้
+    now = datetime.now(timezone.utc)
+    current_month = now.month
+    current_year = now.year
+
+    month_completed_result = await db.execute(
+        select(func.count(EventParticipation.id))
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.status == ParticipationStatus.COMPLETED,
+            extract('month', EventParticipation.completed_at) == current_month,
+            extract('year', EventParticipation.completed_at) == current_year
+        )
+    )
+    current_month_completions = month_completed_result.scalar() or 0
+
+    return {
+        "user_id": user_id,
+        "total_events_joined": total_events_joined,
+        "total_events_completed": total_events_completed,
+        "total_distance_km": total_distance_km,
+        "completion_rate": completion_rate,
+        "current_month_completions": current_month_completions
+    }

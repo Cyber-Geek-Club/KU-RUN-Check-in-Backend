@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, ForeignKey, Text, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -36,6 +36,10 @@ class EventParticipation(Base):
     # Proof submission
     proof_image_url = Column(String(500), nullable=True)
     proof_submitted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # 🆕 Strava integration & Distance tracking
+    strava_link = Column(String(500), nullable=True)  # Link to Strava activity
+    actual_distance_km = Column(Numeric(6, 2), nullable=True)  # Actual distance ran (e.g., 5.23 km)
 
     # Staff verification
     checked_in_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who checked in
