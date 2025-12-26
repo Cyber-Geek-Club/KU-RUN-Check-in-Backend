@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 from datetime import datetime
 from typing import Optional
+from decimal import Decimal
 from src.models.event_participation import ParticipationStatus
 
 try:
@@ -22,7 +23,15 @@ class EventParticipationCheckIn(BaseModel):
 
 
 class EventParticipationProofSubmit(BaseModel):
+    """ส่งหลักฐานการวิ่ง (รูปภาพ + ข้อมูลเพิ่มเติม)"""
     proof_image_url: str
+    strava_link: Optional[str] = Field(None, description="Strava activity link (optional)")
+    actual_distance_km: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        le=9999.99,
+        description="Actual distance ran in kilometers (optional)"
+    )
 
 
 class EventParticipationVerify(BaseModel):
@@ -58,6 +67,10 @@ class EventParticipationRead(EventParticipationBase):
     proof_image_url: Optional[str] = None
     proof_submitted_at: Optional[datetime] = None
 
+    # 🆕 Strava & Distance tracking
+    strava_link: Optional[str] = None
+    actual_distance_km: Optional[Decimal] = None
+
     # Check-in
     checked_in_at: Optional[datetime] = None
 
@@ -75,6 +88,22 @@ class EventParticipationRead(EventParticipationBase):
     # Timestamps
     joined_at: datetime
     updated_at: datetime
+
+    if ConfigDict:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
+
+
+class UserStatistics(BaseModel):
+    """สถิติการวิ่งของผู้ใช้"""
+    user_id: int
+    total_events_joined: int  # จำนวนงานที่ลงทะเบียนทั้งหมด
+    total_events_completed: int  # จำนวนงานที่วิ่งสำเร็จ
+    total_distance_km: Decimal  # ระยะทางรวมที่วิ่ง (กม.)
+    completion_rate: float  # เปอร์เซ็นต์การวิ่งสำเร็จ
+    current_month_completions: int  # จำนวนครั้งที่วิ่งสำเร็จในเดือนนี้
 
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
