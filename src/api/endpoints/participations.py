@@ -12,7 +12,8 @@ from src.schemas.event_participation_schema import (
     EventParticipationCheckIn,
     EventParticipationProofSubmit,
     EventParticipationVerify,
-    EventParticipationCancel
+    EventParticipationCancel,
+    UserStatistics
 )
 from src.models.user import User
 from src.models.event_participation import ParticipationStatus
@@ -30,13 +31,6 @@ async def join_event(
     """
     Join an event with capacity check
     Requires: Any authenticated user
-
-    **ระบบจะตรวจสอบความจุก่อนอนุญาตให้ join**
-
-    - ตรวจสอบว่างานเต็มหรือไม่
-    - ตรวจสอบว่างาน active และ published หรือไม่
-    - สร้าง join_code (5 หลัก) อัตโนมัติ
-    - ส่งการแจ้งเตือนอัตโนมัติ
     """
     # ตรวจสอบความจุก่อน
     capacity = await event_crud.check_event_capacity(db, participation.event_id)
@@ -59,7 +53,6 @@ async def join_event(
                 detail="Event is not available for registration"
             )
 
-    # สร้าง participation
     return await event_participation_crud.create_participation(db, participation, current_user.id)
 
 
@@ -69,12 +62,7 @@ async def get_user_participations(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Get all participations for a user
-    Requires: User can only view their own or staff/organizer can view any
-
-    ดึงข้อมูลการเข้าร่วมงานทั้งหมดของผู้ใช้
-    """
+    """Get all participations for a user"""
     if current_user.id != user_id and current_user.role.value not in ['staff', 'organizer']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -83,18 +71,40 @@ async def get_user_participations(
     return await event_participation_crud.get_participations_by_user(db, user_id)
 
 
+@router.get("/user/{user_id}/statistics", response_model=UserStatistics)
+async def get_user_statistics(
+        user_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Get user running statistics
+    Requires: User can view their own stats or staff/organizer can view any
+
+    ดึงสถิติการวิ่งของผู้ใช้:
+    - จำนวนงานที่ลงทะเบียนทั้งหมด
+    - จำนวนงานที่วิ่งสำเร็จ
+    - ระยะทางรวมที่วิ่ง (กม.)
+    - เปอร์เซ็นต์ความสำเร็จ
+    - จำนวนครั้งที่วิ่งสำเร็จในเดือนนี้
+    """
+    # Users can only view their own stats, unless they're staff/organizer
+    if current_user.id != user_id and current_user.role.value not in ['staff', 'organizer']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own statistics"
+        )
+
+    return await event_participation_crud.get_user_statistics(db, user_id)
+
+
 @router.get("/event/{event_id}", response_model=List[EventParticipationRead])
 async def get_event_participations(
         event_id: int,
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_staff_or_organizer)
 ):
-    """
-    Get all participations for an event
-    Requires: Staff or Organizer role
-
-    ดึงข้อมูลผู้เข้าร่วมทั้งหมดในงาน (สำหรับ Staff)
-    """
+    """Get all participations for an event (Staff/Organizer only)"""
     return await event_participation_crud.get_participations_by_event(db, event_id)
 
 
@@ -104,12 +114,7 @@ async def get_participation(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Get participation by ID
-    Requires: Own participation or staff/organizer
-
-    ดึงข้อมูลการเข้าร่วมตาม ID
-    """
+    """Get participation by ID"""
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
         raise HTTPException(
@@ -132,14 +137,7 @@ async def check_in(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_staff_or_organizer)
 ):
-    """
-    Check-in participant
-    Requires: Staff or Organizer role
-
-    Staff ใช้ join_code (5 หลัก) เพื่อ check-in ผู้เข้าร่วม
-    - Status จะเปลี่ยนจาก JOINED → CHECKED_IN
-    - ส่งการแจ้งเตือนอัตโนมัติ
-    """
+    """Check-in participant using join_code (Staff/Organizer only)"""
     participation = await event_participation_crud.check_in_participation(
         db, check_in_data.join_code, current_user.id
     )
@@ -159,12 +157,13 @@ async def submit_proof(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Submit proof of completion
+    Submit proof of completion with optional Strava link and actual distance
     Requires: Own participation
 
-    ผู้เข้าร่วมส่งหลักฐานการวิ่ง (รูปภาพ)
-    - Status จะเปลี่ยนจาก CHECKED_IN → PROOF_SUBMITTED
-    - ส่งการแจ้งเตือนอัตโนมัติ
+    ส่งหลักฐานการวิ่ง:
+    - รูปภาพ (จำเป็น)
+    - ลิงก์ Strava (ไม่บังคับ)
+    - ระยะทางจริงที่วิ่ง กม. (ไม่บังคับ)
     """
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
@@ -180,7 +179,11 @@ async def submit_proof(
         )
 
     participation = await event_participation_crud.submit_proof(
-        db, participation_id, proof_data.proof_image_url
+        db,
+        participation_id,
+        proof_data.proof_image_url,
+        proof_data.strava_link,
+        proof_data.actual_distance_km
     )
     if not participation:
         raise HTTPException(
@@ -198,16 +201,8 @@ async def resubmit_proof(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Resubmit proof of completion (after rejection)
-    Requires: Own participation
-
-    ส่งหลักฐานใหม่หลังจากถูกปฏิเสธ
-    - สามารถส่งได้เฉพาะเมื่อ status เป็น REJECTED
-    - Status จะเปลี่ยนจาก REJECTED → PROOF_SUBMITTED
-    - ล้างข้อมูล rejection_reason และ rejected_at
-    - ส่งการแจ้งเตือนอัตโนมัติ
-
-    **Use case:** เมื่อหลักฐานถูกปฏิเสธ ผู้ใช้สามารถส่งหลักฐานใหม่ได้
+    Resubmit proof after rejection with updated info
+    Requires: Own participation with REJECTED status
     """
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
@@ -222,15 +217,18 @@ async def resubmit_proof(
             detail="You can only resubmit proof for your own participation"
         )
 
-    # ตรวจสอบว่าต้องเป็น status REJECTED เท่านั้น
     if participation.status != ParticipationStatus.REJECTED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot resubmit proof. Current status: {participation.status.value}. Only rejected proofs can be resubmitted."
+            detail=f"Cannot resubmit proof. Current status: {participation.status.value}"
         )
 
     participation = await event_participation_crud.resubmit_proof(
-        db, participation_id, proof_data.proof_image_url
+        db,
+        participation_id,
+        proof_data.proof_image_url,
+        proof_data.strava_link,
+        proof_data.actual_distance_km
     )
 
     if not participation:
@@ -248,16 +246,7 @@ async def verify_completion(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_staff_or_organizer)
 ):
-    """
-    Verify completion
-    Requires: Staff or Organizer role
-
-    Staff ตรวจสอบหลักฐานและอนุมัติ/ปฏิเสธ
-    - อนุมัติ: Status → COMPLETED, ได้ completion_code (10 ตัวอักษร)
-    - ปฏิเสธ: Status → REJECTED
-    - ระบบจะตรวจสอบและมอบรางวัลอัตโนมัติถ้าผ่าน
-    - ส่งการแจ้งเตือนอัตโนมัติ
-    """
+    """Verify completion (approve/reject) - Staff/Organizer only"""
     participation = await event_participation_crud.verify_completion(
         db,
         verify_data.participation_id,
@@ -285,30 +274,12 @@ async def cancel_participation(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Cancel participation with reason
-    Requires: Own participation
-
-    ยกเลิกการเข้าร่วมงาน (ต้องระบุเหตุผล)
-
-    **Rules:**
-    - ต้องระบุเหตุผลในการยกเลิก (1-500 ตัวอักษร)
-    - ไม่สามารถยกเลิกได้ถ้า status เป็น COMPLETED หรือ REJECTED
-    - Status → CANCELLED
-    - บันทึกเวลาที่ยกเลิก (cancelled_at)
-
-    **Examples of cancellation_reason:**
-    - "มีธุระส่วนตัวฉุกเฉิน"
-    - "ติดภารกิจ"
-    - "สุขภาพไม่พร้อม"
-    - "เปลี่ยนใจ"
-    """
+    """Cancel participation with reason"""
     participation = await event_participation_crud.cancel_participation(
         db, participation_id, current_user.id, cancel_data.cancellation_reason
     )
 
     if not participation:
-        # ตรวจสอบว่ามี participation หรือไม่
         existing = await event_participation_crud.get_participation_by_id(db, participation_id)
 
         if not existing:
@@ -338,14 +309,7 @@ async def delete_participation(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_staff_or_organizer)
 ):
-    """
-    Delete participation (Staff/Organizer only)
-    Requires: Staff or Organizer role
-
-    ลบการเข้าร่วมถาวร (เฉพาะ Staff/Organizer)
-
-    **Note:** ผู้ใช้ทั่วไปควรใช้ `/cancel` แทน
-    """
+    """Delete participation (Staff/Organizer only)"""
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
 
     if not participation:
