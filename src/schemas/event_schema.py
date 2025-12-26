@@ -106,3 +106,22 @@ class EventSummary(BaseModel):
     else:
         class Config:
             orm_mode = True
+
+
+class LeaderboardEntry(BaseModel):
+    """รายการผู้ผ่านเส้นชัยในตารางอันดับ"""
+    rank: int
+    user_id: int
+    first_name: str
+    last_name: str
+    full_name: str
+    role: str
+    completion_code: str
+    completed_at: datetime
+    participation_id: int
+
+    if ConfigDict:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True

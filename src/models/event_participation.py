@@ -43,6 +43,7 @@ class EventParticipation(Base):
 
     completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who verified completion
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    completion_rank = Column(Integer, nullable=True, index=True)  # Ranking order (1st, 2nd, 3rd, etc.)
 
     # Rejection reason (for anti-cheating)
     rejection_reason = Column(Text, nullable=True)
