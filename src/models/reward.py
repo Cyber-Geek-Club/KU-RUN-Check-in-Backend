@@ -12,7 +12,7 @@ class Reward(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    badge_image_url = Column(String(500), nullable=True)
+    badge_image_url = Column(Text, nullable=True)
     
     # Criteria for earning this reward
     required_completions = Column(Integer, default=3)  # จำนวนครั้งที่ต้องวิ่งสำเร็จ

@@ -20,8 +20,7 @@ class Event(Base):
     max_participants = Column(Integer, nullable=True)
 
     # Event image/banner
-    banner_image_url = Column(String(500), nullable=True)
-
+    banner_image_url = Column(Text, nullable=True)
     # Status
     is_active = Column(Boolean, default=True)
     is_published = Column(Boolean, default=False)

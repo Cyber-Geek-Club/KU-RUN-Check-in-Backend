@@ -34,11 +34,11 @@ class EventParticipation(Base):
     status = Column(SQLEnum(ParticipationStatus), default=ParticipationStatus.JOINED)
 
     # Proof submission
-    proof_image_url = Column(String(500), nullable=True)
+    proof_image_url = Column(Text, nullable=True)
     proof_submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     # 🆕 Strava integration & Distance tracking
-    strava_link = Column(String(500), nullable=True)  # Link to Strava activity
+    strava_link = Column(Text, nullable=True)  # Link to Strava activity
     actual_distance_km = Column(Numeric(6, 2), nullable=True)  # Actual distance ran (e.g., 5.23 km)
 
     # Staff verification
