@@ -1,4 +1,4 @@
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, field_validator
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -18,6 +18,35 @@ class EventBase(BaseModel):
     max_participants: Optional[int] = None
     banner_image_url: Optional[str] = None
 
+    @field_validator('banner_image_url')
+    @classmethod
+    def validate_banner_url(cls, v):
+        """Validate that image URL is not a base64 data URL"""
+        if v is None:
+            return v
+
+        # Check if it's a base64 data URL
+        if v.startswith('data:image'):
+            raise ValueError(
+                'Base64 images are not supported. Please upload the image using '
+                'POST /api/images/upload endpoint first, then use the returned URL.'
+            )
+
+        # Check length
+        if len(v) > 500:
+            raise ValueError(
+                f'Image URL too long ({len(v)} chars). Maximum 500 characters. '
+                'Please upload the image using POST /api/images/upload endpoint.'
+            )
+
+        # Optionally validate URL format
+        if not (v.startswith('/uploads/') or v.startswith('http://') or v.startswith('https://')):
+            raise ValueError(
+                'Invalid image URL format. Must start with /uploads/, http://, or https://'
+            )
+
+        return v
+
 
 class EventCreate(EventBase):
     pass
@@ -34,6 +63,23 @@ class EventUpdate(BaseModel):
     banner_image_url: Optional[str] = None
     is_active: Optional[bool] = None
     is_published: Optional[bool] = None
+
+    @field_validator('banner_image_url')
+    @classmethod
+    def validate_banner_url(cls, v):
+        """Validate that image URL is not a base64 data URL"""
+        if v is None:
+            return v
+
+        if v.startswith('data:image'):
+            raise ValueError(
+                'Base64 images are not supported. Please upload the image first.'
+            )
+
+        if len(v) > 500:
+            raise ValueError(f'Image URL too long. Maximum 500 characters.')
+
+        return v
 
 
 class ParticipantStats(BaseModel):
