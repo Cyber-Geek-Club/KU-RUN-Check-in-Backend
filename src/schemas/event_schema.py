@@ -18,12 +18,17 @@ class EventBase(BaseModel):
     max_participants: Optional[int] = None
     banner_image_url: Optional[str] = None
 
-    @field_validator('banner_image_url')
+    @field_validator('banner_image_url', mode='before')
     @classmethod
     def validate_banner_url(cls, v):
-        """Validate that image URL is not a base64 data URL"""
+        """Validate image URL - only validate on input (mode='before')"""
+        # Convert empty string to None
+        if v == '' or (isinstance(v, str) and not v.strip()):
+            return None
+
+        # Allow None
         if v is None:
-            return v
+            return None
 
         # Check if it's a base64 data URL
         if v.startswith('data:image'):
@@ -32,27 +37,23 @@ class EventBase(BaseModel):
                 'POST /api/images/upload endpoint first, then use the returned URL.'
             )
 
-        # Check length
+        # Check length (only for VARCHAR columns, not needed if using TEXT)
         if len(v) > 500:
             raise ValueError(
                 f'Image URL too long ({len(v)} chars). Maximum 500 characters. '
                 'Please upload the image using POST /api/images/upload endpoint.'
             )
 
-        # Optionally validate URL format
-        if not (v.startswith('/uploads/') or v.startswith('http://') or v.startswith('https://')):
-            raise ValueError(
-                'Invalid image URL format. Must start with /uploads/, http://, or https://'
-            )
-
         return v
 
 
 class EventCreate(EventBase):
+    """Schema for creating a new event"""
     pass
 
 
 class EventUpdate(BaseModel):
+    """Schema for updating an event"""
     title: Optional[str] = None
     description: Optional[str] = None
     event_date: Optional[datetime] = None
@@ -64,20 +65,22 @@ class EventUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_published: Optional[bool] = None
 
-    @field_validator('banner_image_url')
+    @field_validator('banner_image_url', mode='before')
     @classmethod
     def validate_banner_url(cls, v):
-        """Validate that image URL is not a base64 data URL"""
-        if v is None:
-            return v
+        """Validate image URL - only validate on input"""
+        # Convert empty string to None
+        if v == '' or (isinstance(v, str) and not v.strip()):
+            return None
 
+        if v is None:
+            return None
+
+        # Check if it's a base64 data URL
         if v.startswith('data:image'):
             raise ValueError(
                 'Base64 images are not supported. Please upload the image first.'
             )
-
-        if len(v) > 500:
-            raise ValueError(f'Image URL too long. Maximum 500 characters.')
 
         return v
 
