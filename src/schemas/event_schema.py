@@ -1,4 +1,4 @@
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, field_validator
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -18,12 +18,42 @@ class EventBase(BaseModel):
     max_participants: Optional[int] = None
     banner_image_url: Optional[str] = None
 
+    @field_validator('banner_image_url', mode='before')
+    @classmethod
+    def validate_banner_url(cls, v):
+        """Validate image URL - only validate on input (mode='before')"""
+        # Convert empty string to None
+        if v == '' or (isinstance(v, str) and not v.strip()):
+            return None
+
+        # Allow None
+        if v is None:
+            return None
+
+        # Check if it's a base64 data URL
+        if v.startswith('data:image'):
+            raise ValueError(
+                'Base64 images are not supported. Please upload the image using '
+                'POST /api/images/upload endpoint first, then use the returned URL.'
+            )
+
+        # Check length (only for VARCHAR columns, not needed if using TEXT)
+        if len(v) > 500:
+            raise ValueError(
+                f'Image URL too long ({len(v)} chars). Maximum 500 characters. '
+                'Please upload the image using POST /api/images/upload endpoint.'
+            )
+
+        return v
+
 
 class EventCreate(EventBase):
+    """Schema for creating a new event"""
     pass
 
 
 class EventUpdate(BaseModel):
+    """Schema for updating an event"""
     title: Optional[str] = None
     description: Optional[str] = None
     event_date: Optional[datetime] = None
@@ -34,6 +64,25 @@ class EventUpdate(BaseModel):
     banner_image_url: Optional[str] = None
     is_active: Optional[bool] = None
     is_published: Optional[bool] = None
+
+    @field_validator('banner_image_url', mode='before')
+    @classmethod
+    def validate_banner_url(cls, v):
+        """Validate image URL - only validate on input"""
+        # Convert empty string to None
+        if v == '' or (isinstance(v, str) and not v.strip()):
+            return None
+
+        if v is None:
+            return None
+
+        # Check if it's a base64 data URL
+        if v.startswith('data:image'):
+            raise ValueError(
+                'Base64 images are not supported. Please upload the image first.'
+            )
+
+        return v
 
 
 class ParticipantStats(BaseModel):
@@ -100,6 +149,25 @@ class EventSummary(BaseModel):
     remaining_slots: int
     is_full: bool
     is_published: bool
+
+    if ConfigDict:
+        model_config = ConfigDict(from_attributes=True)
+    else:
+        class Config:
+            orm_mode = True
+
+
+class LeaderboardEntry(BaseModel):
+    """รายการผู้ผ่านเส้นชัยในตารางอันดับ"""
+    rank: int
+    user_id: int
+    first_name: str
+    last_name: str
+    full_name: str
+    role: str
+    completion_code: str
+    completed_at: datetime
+    participation_id: int
 
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)

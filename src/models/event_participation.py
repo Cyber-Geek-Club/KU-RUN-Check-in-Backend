@@ -34,11 +34,11 @@ class EventParticipation(Base):
     status = Column(SQLEnum(ParticipationStatus), default=ParticipationStatus.JOINED)
 
     # Proof submission
-    proof_image_url = Column(String(500), nullable=True)
+    proof_image_url = Column(Text, nullable=True)
     proof_submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     # 🆕 Strava integration & Distance tracking
-    strava_link = Column(String(500), nullable=True)  # Link to Strava activity
+    strava_link = Column(Text, nullable=True)  # Link to Strava activity
     actual_distance_km = Column(Numeric(6, 2), nullable=True)  # Actual distance ran (e.g., 5.23 km)
 
     # Staff verification
@@ -47,6 +47,7 @@ class EventParticipation(Base):
 
     completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who verified completion
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    completion_rank = Column(Integer, nullable=True, index=True)  # Ranking order (1st, 2nd, 3rd, etc.)
 
     # Rejection reason (for anti-cheating)
     rejection_reason = Column(Text, nullable=True)
