@@ -29,7 +29,7 @@ async def on_startup():
     await init_db()
 
 # Health check
-@app.get("/")
+@app.get("/a[i")
 async def root():
     return {"message": "KU RUN Check-in API is running"}
 
@@ -46,4 +46,4 @@ app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 
 # Mount static files
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")
