@@ -29,7 +29,7 @@ async def on_startup():
     await init_db()
 
 # Health check
-@app.get("/a[i")
+@app.get("/api")
 async def root():
     return {"message": "KU RUN Check-in API is running"}
 
