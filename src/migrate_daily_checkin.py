@@ -1,5 +1,5 @@
 """
-Database Migration: Add Daily Check-in Support (Fixed)
+Database Migration: Add Daily Check-in Support (Fixed V2)
 Save as: src/migrate_daily_checkin.py
 Run: python -m src.migrate_daily_checkin
 """
@@ -16,8 +16,6 @@ async def migrate_daily_checkin():
     print("🔄 Adding Daily Check-in Support...")
     print()
 
-    # Use connect() instead of begin() to manually control the transaction
-    # This ensures we don't accidentally commit partial errors
     async with engine.connect() as conn:
         trans = await conn.begin()
         try:
@@ -52,7 +50,6 @@ async def migrate_daily_checkin():
             print("📝 Step 3: Adding 'expired' status...")
 
             # 🔍 Find the ACTUAL name of the enum type from the database
-            # SQLAlchemy might have named it 'participation_status', 'participationstatus', or similar
             result = await conn.execute(text("""
                 SELECT udt_name 
                 FROM information_schema.columns 
@@ -63,9 +60,12 @@ async def migrate_daily_checkin():
 
             if not enum_name:
                 print("   ❌ Could not find Enum type for 'status' column. Skipping Step 3.")
+            elif enum_name.lower() in ('varchar', 'text', 'string'):
+                # 🟢 FIX: If it's a string column, we don't need to alter the type
+                print(f"   ℹ️  Column type is '{enum_name}' (Standard Text).")
+                print("   ✅ Skipping ALTER TYPE (Text columns accept new values automatically).")
             else:
                 print(f"   ℹ️  Found Enum Type Name: '{enum_name}'")
-                # Use the detected name to alter the type safely
                 await conn.execute(text(f"""
                     ALTER TYPE "{enum_name}" ADD VALUE IF NOT EXISTS 'expired';
                 """))
@@ -94,6 +94,7 @@ async def migrate_daily_checkin():
         except Exception as e:
             await trans.rollback()
             print(f"❌ Migration failed: {e}")
+            # Only print traceback if it's not a standard SQL error we expect might happen
             import traceback
             traceback.print_exc()
             return False
@@ -103,7 +104,6 @@ async def verify_migration():
     print("🔍 Verifying migration...")
     async with engine.connect() as conn:
         try:
-            # Check events table columns
             result = await conn.execute(text("""
                 SELECT column_name, data_type, udt_name
                 FROM information_schema.columns 
@@ -121,7 +121,7 @@ async def verify_migration():
 
 async def main():
     print("=" * 70)
-    print(" KU RUN - Daily Check-in Migration (Fix)")
+    print(" KU RUN - Daily Check-in Migration (Final Fix)")
     print("=" * 70)
     try:
         if await migrate_daily_checkin():
