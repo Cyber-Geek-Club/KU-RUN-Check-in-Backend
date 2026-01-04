@@ -52,8 +52,8 @@ class Notification(Base):
     reward_id = Column(Integer, ForeignKey("rewards.id", ondelete="SET NULL"), nullable=True)
 
     # 🆕 Delivery tracking
-    channel = Column(SQLEnum(NotificationChannel), default=NotificationChannel.IN_APP, nullable=False)
-    status = Column(SQLEnum(NotificationStatus), default=NotificationStatus.PENDING, nullable=False)
+    channel = Column(String(20), default='in_app', nullable=False)
+    status = Column(String(20), default='pending', nullable=False)
 
     # 🆕 Sent tracking
     is_sent = Column(Boolean, default=False)
