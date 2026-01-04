@@ -30,49 +30,64 @@ async def migrate_notification_sent():
             """))
             existing_columns = [row[0] for row in result.fetchall()]
 
-            # 1. Add channel enum type
-            if 'channel' not in existing_columns:
-                print("📝 Creating notification channel enum type...")
-                await conn.execute(text("""
-                    DO $$ BEGIN
-                        CREATE TYPE notificationchannel AS ENUM ('in_app', 'email', 'push', 'sms');
-                    EXCEPTION
-                        WHEN duplicate_object THEN null;
-                    END $$;
-                """))
-                print("   ✅ Enum type created")
+            # 1. Create enum types first
+            print("📝 Creating enum types...")
+            await conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE notificationchannel AS ENUM ('in_app', 'email', 'push', 'sms');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            print("   ✅ notificationchannel type created/verified")
 
-            # 2. Add status enum type
-            if 'status' not in existing_columns:
-                print("📝 Creating notification status enum type...")
-                await conn.execute(text("""
-                    DO $$ BEGIN
-                        CREATE TYPE notificationstatus AS ENUM ('pending', 'sent', 'failed', 'read');
-                    EXCEPTION
-                        WHEN duplicate_object THEN null;
-                    END $$;
-                """))
-                print("   ✅ Enum type created")
+            await conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE notificationstatus AS ENUM ('pending', 'sent', 'failed', 'read');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            print("   ✅ notificationstatus type created/verified")
+            print()
 
-            # 3. Add channel column
+            # 2. Add channel column (as VARCHAR first, then convert to enum)
             if 'channel' not in existing_columns:
                 print("📝 Adding channel column...")
                 await conn.execute(text("""
                     ALTER TABLE notifications 
-                    ADD COLUMN channel notificationchannel DEFAULT 'in_app' NOT NULL;
+                    ADD COLUMN channel VARCHAR(20) DEFAULT 'in_app' NOT NULL;
                 """))
-                print("   ✅ channel column added")
+                print("   ✅ channel column added as VARCHAR")
+
+                print("📝 Converting channel to enum type...")
+                await conn.execute(text("""
+                    ALTER TABLE notifications 
+                    ALTER COLUMN channel TYPE notificationchannel 
+                    USING channel::notificationchannel;
+                """))
+                print("   ✅ channel converted to enum type")
+                print()
             else:
                 print("   ℹ️  channel already exists")
+                print()
 
-            # 4. Add status column
+            # 3. Add status column (as VARCHAR first, then convert to enum)
             if 'status' not in existing_columns:
                 print("📝 Adding status column...")
                 await conn.execute(text("""
                     ALTER TABLE notifications 
-                    ADD COLUMN status notificationstatus DEFAULT 'pending' NOT NULL;
+                    ADD COLUMN status VARCHAR(20) DEFAULT 'pending' NOT NULL;
                 """))
-                print("   ✅ status column added")
+                print("   ✅ status column added as VARCHAR")
+
+                print("📝 Converting status to enum type...")
+                await conn.execute(text("""
+                    ALTER TABLE notifications 
+                    ALTER COLUMN status TYPE notificationstatus 
+                    USING status::notificationstatus;
+                """))
+                print("   ✅ status converted to enum type")
 
                 # Update existing records based on is_read
                 print("📝 Updating existing notification statuses...")
@@ -83,11 +98,13 @@ async def migrate_notification_sent():
                         ELSE 'sent'::notificationstatus
                     END;
                 """))
-                print("   ✅ Statuses updated")
+                print("   ✅ Statuses updated based on is_read")
+                print()
             else:
                 print("   ℹ️  status already exists")
+                print()
 
-            # 5. Add is_sent column
+            # 4. Add is_sent column
             if 'is_sent' not in existing_columns:
                 print("📝 Adding is_sent column...")
                 await conn.execute(text("""
@@ -102,10 +119,12 @@ async def migrate_notification_sent():
                     UPDATE notifications SET is_sent = true;
                 """))
                 print("   ✅ Existing notifications marked as sent")
+                print()
             else:
                 print("   ℹ️  is_sent already exists")
+                print()
 
-            # 6. Add sent_at column
+            # 5. Add sent_at column
             if 'sent_at' not in existing_columns:
                 print("📝 Adding sent_at column...")
                 await conn.execute(text("""
@@ -120,10 +139,12 @@ async def migrate_notification_sent():
                     UPDATE notifications SET sent_at = created_at WHERE is_sent = true;
                 """))
                 print("   ✅ sent_at timestamps set")
+                print()
             else:
                 print("   ℹ️  sent_at already exists")
+                print()
 
-            # 7. Add send_attempts column
+            # 6. Add send_attempts column
             if 'send_attempts' not in existing_columns:
                 print("📝 Adding send_attempts column...")
                 await conn.execute(text("""
@@ -131,10 +152,19 @@ async def migrate_notification_sent():
                     ADD COLUMN send_attempts INTEGER DEFAULT 0;
                 """))
                 print("   ✅ send_attempts column added")
+
+                # Set attempts to 1 for sent notifications
+                print("📝 Setting send_attempts for existing notifications...")
+                await conn.execute(text("""
+                    UPDATE notifications SET send_attempts = 1 WHERE is_sent = true;
+                """))
+                print("   ✅ send_attempts updated")
+                print()
             else:
                 print("   ℹ️  send_attempts already exists")
+                print()
 
-            # 8. Add last_error column
+            # 7. Add last_error column
             if 'last_error' not in existing_columns:
                 print("📝 Adding last_error column...")
                 await conn.execute(text("""
@@ -142,19 +172,27 @@ async def migrate_notification_sent():
                     ADD COLUMN last_error TEXT;
                 """))
                 print("   ✅ last_error column added")
+                print()
             else:
                 print("   ℹ️  last_error already exists")
+                print()
 
-            # 9. Create index for unsent notifications
-            print("📝 Creating index for pending notifications...")
+            # 8. Create indexes
+            print("📝 Creating indexes...")
             await conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_notifications_status 
                 ON notifications(status) 
                 WHERE status = 'pending';
             """))
-            print("   ✅ Index created")
+            print("   ✅ Index on status (pending) created")
 
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_channel 
+                ON notifications(channel);
+            """))
+            print("   ✅ Index on channel created")
             print()
+
             print("🎉 Migration completed successfully!")
             return True
 
@@ -174,7 +212,7 @@ async def verify_columns():
     async with engine.begin() as conn:
         try:
             result = await conn.execute(text("""
-                SELECT column_name, data_type, is_nullable
+                SELECT column_name, data_type, udt_name, is_nullable
                 FROM information_schema.columns 
                 WHERE table_name = 'notifications' 
                 AND column_name IN ('channel', 'status', 'is_sent', 'sent_at', 'send_attempts', 'last_error')
@@ -187,7 +225,8 @@ async def verify_columns():
                 print(f"{'Column':<20} {'Type':<30} {'Nullable'}")
                 print("-" * 60)
                 for col in columns:
-                    print(f"{col[0]:<20} {col[1]:<30} {col[2]}")
+                    col_type = col[2] if col[1] == 'USER-DEFINED' else col[1]
+                    print(f"{col[0]:<20} {col_type:<30} {col[3]}")
                 print()
                 print("✅ Columns verified successfully!")
                 return True
@@ -215,7 +254,12 @@ async def show_summary():
     print("   6. Add 'sent_at' column - timestamp when sent")
     print("   7. Add 'send_attempts' column - retry counter")
     print("   8. Add 'last_error' column - error message if failed")
-    print("   9. Create index for pending notifications")
+    print("   9. Create indexes for better query performance")
+    print()
+    print("   📝 Strategy:")
+    print("      - Add columns as VARCHAR first")
+    print("      - Convert to ENUM type after")
+    print("      - Update existing data appropriately")
     print()
     print("⚠️  Warning: This will modify your database structure!")
     print()
@@ -260,10 +304,17 @@ async def main():
         print()
         print("💡 Next steps:")
         print("   1. Update notification model in src/models/notification.py")
-        print("   2. Update notification schemas")
-        print("   3. Update notification CRUD functions")
-        print("   4. Create notification service for sending")
-        print("   5. Restart your FastAPI server")
+        print("   2. Update notification schemas in src/schemas/notification_schema.py")
+        print("   3. Update notification CRUD in src/crud/notification_crud.py")
+        print("   4. Create src/services/notification_service.py")
+        print("   5. Update notification endpoints in src/api/endpoints/notifications.py")
+        print("   6. Restart your FastAPI server")
+        print()
+        print("📝 Tip: After migration, existing notifications will have:")
+        print("   - status = 'sent' (or 'read' if already read)")
+        print("   - is_sent = true")
+        print("   - sent_at = created_at")
+        print("   - send_attempts = 1")
         print()
 
     except KeyboardInterrupt:
