@@ -12,6 +12,8 @@ from decimal import Decimal
 import random
 import string
 
+from src.utils.image_hash import are_images_similar, get_hash_similarity_score
+
 
 def generate_join_code() -> str:
     """Generate unique 5-digit code"""
@@ -89,6 +91,62 @@ async def create_participation(db: AsyncSession, participation: EventParticipati
     return db_participation
 
 
+async def check_duplicate_proof_image(
+        db: AsyncSession,
+        image_hash: str,
+        current_user_id: int,
+        current_participation_id: Optional[int] = None
+) -> Optional[Dict]:
+    """
+    🆕 Check if image hash already exists in the system
+
+    Args:
+        db: Database session
+        image_hash: Hash of the uploaded image
+        current_user_id: ID of user uploading the image
+        current_participation_id: ID of current participation (for resubmit)
+
+    Returns:
+        Dict with duplicate info if found, None if unique
+    """
+    if not image_hash:
+        return None
+
+    # Get all participations with proof images
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            EventParticipation.proof_image_hash.isnot(None),
+            EventParticipation.status.in_([
+                ParticipationStatus.PROOF_SUBMITTED,
+                ParticipationStatus.COMPLETED
+            ])
+        )
+    )
+    participations = result.scalars().all()
+
+    # Check for similar images
+    for participation in participations:
+        # Skip if it's the same participation (for resubmit)
+        if current_participation_id and participation.id == current_participation_id:
+            continue
+
+        # Check if hashes are similar
+        if are_images_similar(image_hash, participation.proof_image_hash, threshold=5):
+            similarity = get_hash_similarity_score(image_hash, participation.proof_image_hash)
+
+            return {
+                "is_duplicate": True,
+                "participation_id": participation.id,
+                "user_id": participation.user_id,
+                "event_id": participation.event_id,
+                "is_same_user": participation.user_id == current_user_id,
+                "similarity_score": similarity,
+                "submitted_at": participation.proof_submitted_at
+            }
+
+    return None
+
 async def check_in_participation(db: AsyncSession, join_code: str, staff_id: int) -> Optional[EventParticipation]:
     participation = await get_participation_by_join_code(db, join_code)
     if not participation or participation.status != ParticipationStatus.JOINED:
@@ -115,15 +173,49 @@ async def submit_proof(
         db: AsyncSession,
         participation_id: int,
         proof_image_url: str,
+        image_hash: str,  # 🆕 Add hash parameter
         strava_link: Optional[str] = None,
         actual_distance_km: Optional[Decimal] = None
 ) -> Optional[EventParticipation]:
-    """ส่งหลักฐานการวิ่ง พร้อม Strava link และระยะทางจริง"""
+    """ส่งหลักฐานการวิ่ง พร้อมตรวจสอบภาพซ้ำ"""
     participation = await get_participation_by_id(db, participation_id)
     if not participation or participation.status != ParticipationStatus.CHECKED_IN:
         return None
 
+    # 🆕 Check for duplicate images
+    duplicate_check = await check_duplicate_proof_image(
+        db,
+        image_hash,
+        participation.user_id,
+        participation_id
+    )
+
+    if duplicate_check and duplicate_check["is_duplicate"]:
+        # If same user submitted the same image before, allow it (might be correction)
+        if not duplicate_check["is_same_user"]:
+            # Different user with same/similar image - reject
+            participation.status = ParticipationStatus.REJECTED
+            participation.rejection_reason = (
+                f"ภาพซ้ำกับการส่งครั้งก่อน (Similarity: {duplicate_check['similarity_score']}/64). "
+                f"กรุณาส่งภาพจริงของคุณเอง"
+            )
+            participation.rejected_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(participation)
+
+            # Notify rejection
+            if participation.event:
+                await notification_crud.notify_completion_rejected(
+                    db, participation.user_id, participation.event_id,
+                    participation.id, participation.event.title,
+                    participation.rejection_reason
+                )
+
+            return participation
+
+    # Update participation with proof
     participation.proof_image_url = proof_image_url
+    participation.proof_image_hash = image_hash  # 🆕 Store hash
     participation.strava_link = strava_link
     participation.actual_distance_km = actual_distance_km
     participation.proof_submitted_at = datetime.now(timezone.utc)
@@ -132,7 +224,7 @@ async def submit_proof(
     await db.commit()
     await db.refresh(participation)
 
-    # 🔔 สร้างการแจ้งเตือน: ส่งหลักฐานแล้ว
+    # Notify
     if participation.event:
         await notification_crud.notify_proof_submitted(
             db, participation.user_id, participation.event_id,
@@ -146,24 +238,45 @@ async def resubmit_proof(
         db: AsyncSession,
         participation_id: int,
         proof_image_url: str,
+        image_hash: str,  # 🆕 Add hash parameter
         strava_link: Optional[str] = None,
         actual_distance_km: Optional[Decimal] = None
 ) -> Optional[EventParticipation]:
     """ส่งหลักฐานใหม่หลังจากถูกปฏิเสธ"""
     participation = await get_participation_by_id(db, participation_id)
 
-    # ตรวจสอบว่าต้องเป็น status REJECTED เท่านั้น
     if not participation or participation.status != ParticipationStatus.REJECTED:
         return None
 
-    # อัปเดตหลักฐานใหม่
+    # 🆕 Check for duplicate images
+    duplicate_check = await check_duplicate_proof_image(
+        db,
+        image_hash,
+        participation.user_id,
+        participation_id  # Pass current ID to allow same image
+    )
+
+    if duplicate_check and duplicate_check["is_duplicate"] and not duplicate_check["is_same_user"]:
+        # Different user with same image
+        participation.rejection_reason = (
+            f"ภาพซ้ำกับการส่งของผู้ใช้อื่น (Similarity: {duplicate_check['similarity_score']}/64). "
+            f"กรุณาส่งภาพจริงของคุณเอง"
+        )
+        participation.rejected_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(participation)
+
+        return participation
+
+    # Update with new proof
     participation.proof_image_url = proof_image_url
+    participation.proof_image_hash = image_hash  # 🆕 Update hash
     participation.strava_link = strava_link
     participation.actual_distance_km = actual_distance_km
     participation.proof_submitted_at = datetime.now(timezone.utc)
     participation.status = ParticipationStatus.PROOF_SUBMITTED
 
-    # ล้างข้อมูลการปฏิเสธ
+    # Clear rejection info
     participation.rejection_reason = None
     participation.rejected_by = None
     participation.rejected_at = None
@@ -171,7 +284,7 @@ async def resubmit_proof(
     await db.commit()
     await db.refresh(participation)
 
-    # 🔔 สร้างการแจ้งเตือน: ส่งหลักฐานใหม่แล้ว
+    # Notify
     if participation.event:
         await notification_crud.notify_proof_resubmitted(
             db, participation.user_id, participation.event_id,

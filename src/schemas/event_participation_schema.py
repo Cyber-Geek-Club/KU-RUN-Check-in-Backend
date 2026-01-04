@@ -23,8 +23,9 @@ class EventParticipationCheckIn(BaseModel):
 
 
 class EventParticipationProofSubmit(BaseModel):
-    """ส่งหลักฐานการวิ่ง (รูปภาพ + ข้อมูลเพิ่มเติม)"""
+    """ส่งหลักฐานการวิ่ง"""
     proof_image_url: str
+    image_hash: Optional[str] = Field(None, description="Perceptual hash for duplicate detection")  # 🆕
     strava_link: Optional[str] = Field(None, description="Strava activity link (optional)")
     actual_distance_km: Optional[Decimal] = Field(
         None,
@@ -66,6 +67,7 @@ class EventParticipationRead(EventParticipationBase):
 
     # Proof
     proof_image_url: Optional[str] = None
+    proof_image_hash: Optional[str] = None  # 🆕
     proof_submitted_at: Optional[datetime] = None
 
     # 🆕 Strava & Distance tracking

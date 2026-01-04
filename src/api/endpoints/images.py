@@ -8,6 +8,7 @@ import aiofiles
 
 from src.api.dependencies.auth import get_db, get_current_user, require_staff_or_organizer
 from src.models.user import User
+from src.utils.image_hash import calculate_image_hash_from_bytes
 
 # สร้าง Router instance เพื่อให้ main.py เรียกใช้ได้
 router = APIRouter()
@@ -31,7 +32,6 @@ def validate_image_file(file: UploadFile) -> None:
             detail="No file provided"
         )
 
-    # Check file extension
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -91,32 +91,29 @@ def validate_file_path(file_path: str) -> Path:
 async def save_upload_file(
         file: UploadFile,
         subfolder: str = "events"
-) -> str:
+) -> tuple[str, str]:  # 🆕 Return both path and hash
     """
-    Save uploaded file to disk
+    Save uploaded file to disk and calculate hash
+
+    Returns:
+        tuple: (file_path, image_hash)
     """
     validate_image_file(file)
     validate_subfolder(subfolder)
 
-    # Generate unique filename
     filename = generate_unique_filename(file.filename)
-
-    # Ensure directory exists (Safety check)
     save_path = UPLOAD_DIR / subfolder
     save_path.mkdir(parents=True, exist_ok=True)
-
     file_path = save_path / filename
 
-    # Check file size while reading
     total_size = 0
+    file_bytes = bytearray()  # 🆕 Collect bytes for hashing
 
     try:
-        # Save file asynchronously
         async with aiofiles.open(file_path, 'wb') as f:
-            while chunk := await file.read(8192):  # Read in 8KB chunks
+            while chunk := await file.read(8192):
                 total_size += len(chunk)
                 if total_size > MAX_FILE_SIZE:
-                    # Delete partial file
                     await f.close()
                     file_path.unlink(missing_ok=True)
                     raise HTTPException(
@@ -124,19 +121,30 @@ async def save_upload_file(
                         detail=f"File too large. Maximum size: {MAX_FILE_SIZE / (1024 * 1024)}MB"
                     )
                 await f.write(chunk)
+                file_bytes.extend(chunk)  # 🆕 Collect bytes
+
+        # 🆕 Calculate image hash
+        image_hash = calculate_image_hash_from_bytes(bytes(file_bytes))
+
+        if not image_hash:
+            # Clean up if hash calculation fails
+            file_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to process image"
+            )
+
+        relative_path = f"/uploads/{subfolder}/{filename}"
+        return relative_path, image_hash
+
     except Exception as e:
-        # Clean up on error
         file_path.unlink(missing_ok=True)
-        # Re-raise HTTP exceptions
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not save file: {str(e)}"
         )
-
-    # Return relative path for database storage
-    return f"/uploads/{subfolder}/{filename}"
 
 
 async def delete_upload_file(file_path: str) -> bool:
@@ -166,18 +174,16 @@ async def delete_upload_file(file_path: str) -> bool:
 @router.post("/upload")
 async def upload_image(
         file: UploadFile = File(...),
-        subfolder: str = Form("events"),  # Changed from query parameter to form field
+        subfolder: str = Form("events"),
         current_user: User = Depends(get_current_user)
 ):
     """
-    Upload an image file
-    Requires: Authenticated user
+    Upload an image file with duplicate detection
 
-    - **file**: Image file to upload (jpg, jpeg, png, gif, webp)
-    - **subfolder**: Destination folder (events, proofs, rewards)
-    - **Returns**: URL path to the uploaded image
+    Returns:
+        - url: Path to uploaded image
+        - image_hash: Perceptual hash for duplicate detection
     """
-    # Validate subfolder first (before checking permissions)
     try:
         validate_subfolder(subfolder)
     except HTTPException as e:
@@ -186,7 +192,7 @@ async def upload_image(
             "error": e.detail
         }
 
-    # Additional validation based on user role and subfolder
+    # Role-based validation
     if subfolder == "events" and current_user.role.value not in ['organizer', 'staff']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -199,13 +205,14 @@ async def upload_image(
             detail="Only organizers can upload reward images"
         )
 
-    # Proofs can be uploaded by any authenticated user (students uploading their completion proof)
-
     try:
-        file_url = await save_upload_file(file, subfolder)
+        # 🆕 Get both path and hash
+        file_url, image_hash = await save_upload_file(file, subfolder)
+
         return {
             "success": True,
             "url": file_url,
+            "image_hash": image_hash,  # 🆕 Return hash
             "message": "Image uploaded successfully"
         }
     except HTTPException as e:

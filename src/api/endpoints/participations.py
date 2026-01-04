@@ -157,13 +157,9 @@ async def submit_proof(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Submit proof of completion with optional Strava link and actual distance
-    Requires: Own participation
+    Submit proof of completion with duplicate detection
 
-    ส่งหลักฐานการวิ่ง:
-    - รูปภาพ (จำเป็น)
-    - ลิงก์ Strava (ไม่บังคับ)
-    - ระยะทางจริงที่วิ่ง กม. (ไม่บังคับ)
+    🆕 Now includes automatic duplicate image detection
     """
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
@@ -178,18 +174,30 @@ async def submit_proof(
             detail="You can only submit proof for your own participation"
         )
 
+    # 🆕 Extract image hash from proof_data if available
+    # Frontend should include this after uploading via /api/images/upload
+    image_hash = getattr(proof_data, 'image_hash', None)
+
+    if not image_hash:
+        # If no hash provided, try to calculate from image
+        from src.utils.image_hash import calculate_image_hash
+        image_hash = calculate_image_hash(proof_data.proof_image_url)
+
     participation = await event_participation_crud.submit_proof(
         db,
         participation_id,
         proof_data.proof_image_url,
+        image_hash,  # 🆕 Pass hash
         proof_data.strava_link,
         proof_data.actual_distance_km
     )
+
     if not participation:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid participation or not checked in"
         )
+
     return participation
 
 
@@ -201,8 +209,7 @@ async def resubmit_proof(
         current_user: User = Depends(get_current_user)
 ):
     """
-    Resubmit proof after rejection with updated info
-    Requires: Own participation with REJECTED status
+    Resubmit proof after rejection with duplicate detection
     """
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
@@ -223,10 +230,18 @@ async def resubmit_proof(
             detail=f"Cannot resubmit proof. Current status: {participation.status.value}"
         )
 
+    # 🆕 Get image hash
+    image_hash = getattr(proof_data, 'image_hash', None)
+
+    if not image_hash:
+        from src.utils.image_hash import calculate_image_hash
+        image_hash = calculate_image_hash(proof_data.proof_image_url)
+
     participation = await event_participation_crud.resubmit_proof(
         db,
         participation_id,
         proof_data.proof_image_url,
+        image_hash,  # 🆕 Pass hash
         proof_data.strava_link,
         proof_data.actual_distance_km
     )

@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Numeric
-# ❌ ลบบรรทัดนี้ถ้ามี: from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -31,11 +30,11 @@ class EventParticipation(Base):
     join_code = Column(String(5), unique=True, nullable=False, index=True)
     completion_code = Column(String(10), unique=True, nullable=True)
 
-    # ✅ เปลี่ยนเป็น String แทน SQLEnum
     status = Column(String(20), default="joined", nullable=False)
 
     # Proof submission
     proof_image_url = Column(Text, nullable=True)
+    proof_image_hash = Column(String(64), nullable=True, index=True)  # 🆕 เพิ่ม hash
     proof_submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Strava & Distance
