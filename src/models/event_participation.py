@@ -1,18 +1,20 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Numeric
+# src/models/event_participation.py
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Numeric, Date, Boolean
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import enum
 
 from src.models.base import Base
 
 
 class ParticipationStatus(str, enum.Enum):
-    JOINED = "joined"
-    CHECKED_IN = "checked_in"
+    JOINED = "joined"                   # ลงทะเบียนแล้ว (รอ check-in)
+    CHECKED_IN = "checked_in"           # Check-in แล้ว (ใช้รหัสแล้ว)
     PROOF_SUBMITTED = "proof_submitted"
     COMPLETED = "completed"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+    EXPIRED = "expired"                 # 🆕 รหัสหมดอายุ (ไม่ได้ check-in ภายในวัน)
 
 
 class EventParticipation(Base):
@@ -32,9 +34,14 @@ class EventParticipation(Base):
 
     status = Column(String(20), default="joined", nullable=False)
 
+    # 🆕 Daily check-in tracking
+    checkin_date = Column(Date, nullable=True, index=True)  # วันที่ check-in (YYYY-MM-DD)
+    code_used = Column(Boolean, default=False)              # รหัสถูกใช้แล้วหรือยัง
+    code_expires_at = Column(DateTime(timezone=True), nullable=True)  # รหัสหมดอายุเมื่อไหร่
+
     # Proof submission
     proof_image_url = Column(Text, nullable=True)
-    proof_image_hash = Column(String(64), nullable=True, index=True)  # 🆕 เพิ่ม hash
+    proof_image_hash = Column(String(64), nullable=True, index=True)
     proof_submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Strava & Distance
@@ -69,3 +76,19 @@ class EventParticipation(Base):
     staff_checked_in = relationship("User", foreign_keys=[checked_in_by])
     staff_completed = relationship("User", foreign_keys=[completed_by])
     staff_rejected = relationship("User", foreign_keys=[rejected_by])
+
+    @property
+    def is_code_expired(self) -> bool:
+        """ตรวจสอบว่ารหัสหมดอายุหรือไม่"""
+        if not self.code_expires_at:
+            return False
+        return datetime.now(timezone.utc) > self.code_expires_at
+
+    @property
+    def can_use_code(self) -> bool:
+        """ตรวจสอบว่ารหัสยังใช้ได้หรือไม่"""
+        return (
+            not self.code_used and
+            not self.is_code_expired and
+            self.status == ParticipationStatus.JOINED
+        )
