@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, ForeignKey, Text, Numeric
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+# ❌ ลบบรรทัดนี้: from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import enum
@@ -6,66 +7,70 @@ import enum
 from src.models.base import Base
 
 
-class ParticipationStatus(str, enum.Enum):
-    JOINED = "joined"  # ลงทะเบียนแล้ว รอวันงาน
-    CHECKED_IN = "checked_in"  # Check-in แล้ว เริ่มวิ่ง
-    PROOF_SUBMITTED = "proof_submitted"  # ส่งหลักฐานแล้ว รอตรวจสอบ
-    COMPLETED = "completed"  # วิ่งเสร็จสมบูรณ์
-    REJECTED = "rejected"  # ถูกปฏิเสธ (ทุจริต)
-    CANCELLED = "cancelled"  # ยกเลิก
+class NotificationType(str, enum.Enum):
+    EVENT_JOINED = "event_joined"
+    EVENT_REMINDER = "event_reminder"
+    CHECK_IN_SUCCESS = "check_in_success"
+    PROOF_SUBMITTED = "proof_submitted"
+    COMPLETION_APPROVED = "completion_approved"
+    COMPLETION_REJECTED = "completion_rejected"
+    REWARD_EARNED = "reward_earned"
+    EVENT_UPDATED = "event_updated"
+    EVENT_CANCELLED = "event_cancelled"
 
 
-class EventParticipation(Base):
-    __tablename__ = "event_participations"
+class NotificationChannel(str, enum.Enum):
+    IN_APP = "in_app"
+    EMAIL = "email"
+    PUSH = "push"
+    SMS = "sms"
+
+
+class NotificationStatus(str, enum.Enum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    READ = "read"
+
+
+class Notification(Base):
+    """ตารางแจ้งเตือน"""
+    __tablename__ = "notifications"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    event_id = Column(
-        Integer,
-        ForeignKey("events.id", ondelete="CASCADE"),
-        nullable=False
-    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    # Unique codes
-    join_code = Column(String(5), unique=True, nullable=False, index=True)  # 5-digit code for check-in
-    completion_code = Column(String(10), unique=True, nullable=True)  # Code after proof approved
+    # Notification details
+    type = Column(String(50), nullable=False)  # ✅ เปลี่ยนจาก SQLEnum
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
 
-    # Status tracking
-    status = Column(SQLEnum(ParticipationStatus), default=ParticipationStatus.JOINED)
+    # Related entities
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=True)
+    participation_id = Column(Integer, ForeignKey("event_participations.id", ondelete="CASCADE"), nullable=True)
+    reward_id = Column(Integer, ForeignKey("rewards.id", ondelete="SET NULL"), nullable=True)
 
-    # Proof submission
-    proof_image_url = Column(Text, nullable=True)
-    proof_submitted_at = Column(DateTime(timezone=True), nullable=True)
+    # ✅ เปลี่ยนเป็น String แทน ENUM
+    channel = Column(String(20), default='in_app', nullable=False)
+    status = Column(String(20), default='pending', nullable=False)
 
-    # 🆕 Strava integration & Distance tracking
-    strava_link = Column(Text, nullable=True)  # Link to Strava activity
-    actual_distance_km = Column(Numeric(6, 2), nullable=True)  # Actual distance ran (e.g., 5.23 km)
+    # Sent tracking
+    is_sent = Column(Boolean, default=False)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Staff verification
-    checked_in_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who checked in
-    checked_in_at = Column(DateTime(timezone=True), nullable=True)
+    # Delivery attempts and errors
+    send_attempts = Column(Integer, default=0)
+    last_error = Column(Text, nullable=True)
 
-    completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Staff who verified completion
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-    completion_rank = Column(Integer, nullable=True, index=True)  # Ranking order (1st, 2nd, 3rd, etc.)
-
-    # Rejection reason (for anti-cheating)
-    rejection_reason = Column(Text, nullable=True)
-    rejected_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    rejected_at = Column(DateTime(timezone=True), nullable=True)
-
-    # Cancellation reason (when user cancels)
-    cancellation_reason = Column(Text, nullable=True)
-    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    # Read tracking
+    is_read = Column(Boolean, default=False)
+    read_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
-    joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    user = relationship("User", back_populates="participations", foreign_keys=[user_id])
-    event = relationship("Event", back_populates="participations")
-    staff_checked_in = relationship("User", foreign_keys=[checked_in_by])
-    staff_completed = relationship("User", foreign_keys=[completed_by])
-    staff_rejected = relationship("User", foreign_keys=[rejected_by])
+    user = relationship("User", back_populates="notifications")
+    event = relationship("Event")
+    participation = relationship("EventParticipation")
+    reward = relationship("Reward")
