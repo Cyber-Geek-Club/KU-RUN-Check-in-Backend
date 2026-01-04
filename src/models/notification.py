@@ -7,15 +7,31 @@ from src.models.base import Base
 
 
 class NotificationType(str, enum.Enum):
-    EVENT_JOINED = "event_joined"  # เมื่อลงทะเบียนงานสำเร็จ
-    EVENT_REMINDER = "event_reminder"  # แจ้งเตือนก่อนงาน 1 วัน
-    CHECK_IN_SUCCESS = "check_in_success"  # Check-in สำเร็จ
-    PROOF_SUBMITTED = "proof_submitted"  # ส่งหลักฐานแล้ว
-    COMPLETION_APPROVED = "completion_approved"  # อนุมัติหลักฐาน
-    COMPLETION_REJECTED = "completion_rejected"  # ปฏิเสธหลักฐาน
-    REWARD_EARNED = "reward_earned"  # ได้รับรางวัล
-    EVENT_UPDATED = "event_updated"  # งานมีการอัปเดต
-    EVENT_CANCELLED = "event_cancelled"  # งานถูกยกเลิก
+    EVENT_JOINED = "event_joined"
+    EVENT_REMINDER = "event_reminder"
+    CHECK_IN_SUCCESS = "check_in_success"
+    PROOF_SUBMITTED = "proof_submitted"
+    COMPLETION_APPROVED = "completion_approved"
+    COMPLETION_REJECTED = "completion_rejected"
+    REWARD_EARNED = "reward_earned"
+    EVENT_UPDATED = "event_updated"
+    EVENT_CANCELLED = "event_cancelled"
+
+
+class NotificationChannel(str, enum.Enum):
+    """Channels through which notifications can be sent"""
+    IN_APP = "in_app"  # In-app notification (default)
+    EMAIL = "email"  # Email notification
+    PUSH = "push"  # Push notification
+    SMS = "sms"  # SMS notification
+
+
+class NotificationStatus(str, enum.Enum):
+    """Status of notification delivery"""
+    PENDING = "pending"  # Created but not sent
+    SENT = "sent"  # Successfully sent
+    FAILED = "failed"  # Failed to send
+    READ = "read"  # Read by user
 
 
 class Notification(Base):
@@ -35,7 +51,19 @@ class Notification(Base):
     participation_id = Column(Integer, ForeignKey("event_participations.id", ondelete="CASCADE"), nullable=True)
     reward_id = Column(Integer, ForeignKey("rewards.id", ondelete="SET NULL"), nullable=True)
 
-    # Status
+    # 🆕 Delivery tracking
+    channel = Column(SQLEnum(NotificationChannel), default=NotificationChannel.IN_APP, nullable=False)
+    status = Column(SQLEnum(NotificationStatus), default=NotificationStatus.PENDING, nullable=False)
+
+    # 🆕 Sent tracking
+    is_sent = Column(Boolean, default=False)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    # 🆕 Delivery attempts and errors
+    send_attempts = Column(Integer, default=0)
+    last_error = Column(Text, nullable=True)
+
+    # Read tracking (existing)
     is_read = Column(Boolean, default=False)
     read_at = Column(DateTime(timezone=True), nullable=True)
 
