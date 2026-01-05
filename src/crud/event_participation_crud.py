@@ -557,14 +557,6 @@ async def check_daily_registration_limit(
 ) -> dict:
     """
     🔍 ตรวจสอบว่าผู้ใช้สามารถลงทะเบียนวันนี้ได้หรือไม่
-
-    Returns:
-        {
-            "can_register": bool,
-            "reason": str,
-            "today_registration": EventParticipation | None,
-            "total_checkins": int
-        }
     """
     from src.models.event import Event
 
@@ -578,8 +570,8 @@ async def check_daily_registration_limit(
             detail="Event not found"
         )
 
-    # ถ้าเป็นกิจกรรมแบบวันเดียว (เดิม) - ใช้ logic เดิม
-    if not event.is_multi_day:
+    # ถ้าเป็นกิจกรรมแบบวันเดียว - ใช้ logic เดิม
+    if not hasattr(event, 'event_type') or event.event_type != 'multi_day':
         existing = await db.execute(
             select(EventParticipation)
             .where(
@@ -602,7 +594,7 @@ async def check_daily_registration_limit(
             "total_checkins": 0
         }
 
-    # 🆕 กิจกรรมแบบหลายวัน - ตรวจสอบรายวัน
+    # 🆕 กิจกรรมแบบหลายวัน
     today = date.today()
 
     # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง
@@ -625,8 +617,8 @@ async def check_daily_registration_limit(
             "total_checkins": 0
         }
 
-    # 2. ตรวจสอบจำนวนครั้งทั้งหมด (ถ้ามีการจำกัด)
-    if event.max_checkins_per_user:
+    # 2. ตรวจสอบจำนวนครั้งทั้งหมด
+    if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
         total_checkins_result = await db.execute(
             select(func.count(EventParticipation.id))
             .where(
@@ -662,7 +654,7 @@ async def create_daily_participation(
         user_id: int
 ) -> EventParticipation:
     """
-    🆕 สร้าง participation แบบรายวัน (สำหรับ multi-day events)
+    🆕 สร้าง participation แบบรายวัน
     """
     from src.models.event import Event
 
@@ -688,7 +680,7 @@ async def create_daily_participation(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
-    # 🆕 กำหนดวันหมดอายุของรหัส (สิ้นสุดวันนี้ 23:59:59)
+    # กำหนดวันหมดอายุ
     today = date.today()
     code_expires_at = datetime.combine(
         today,
@@ -701,16 +693,16 @@ async def create_daily_participation(
         event_id=participation.event_id,
         join_code=join_code,
         status=ParticipationStatus.JOINED,
-        checkin_date=today,  # 🆕 บันทึกวันที่ลงทะเบียน
-        code_used=False,  # 🆕 รหัสยังไม่ได้ใช้
-        code_expires_at=code_expires_at  # 🆕 รหัสหมดอายุเมื่อสิ้นสุดวัน
+        checkin_date=today,
+        code_used=False,
+        code_expires_at=code_expires_at
     )
 
     db.add(db_participation)
     await db.commit()
     await db.refresh(db_participation)
 
-    # 🔔 สร้างการแจ้งเตือน
+    # แจ้งเตือน
     if event:
         await notification_crud.notify_event_joined(
             db, user_id, participation.event_id,
@@ -726,9 +718,8 @@ async def check_in_with_code(
         staff_id: int
 ) -> EventParticipation:
     """
-    🆕 Check-in ด้วยรหัส (แบบใช้ครั้งเดียว)
+    🆕 Check-in ด้วยรหัส
     """
-    # ค้นหา participation จากรหัส
     participation = await get_participation_by_join_code(db, join_code)
 
     if not participation:
@@ -737,41 +728,39 @@ async def check_in_with_code(
             detail="ไม่พบรหัสนี้ในระบบ"
         )
 
-    # ตรวจสอบสถานะ
     if participation.status != ParticipationStatus.JOINED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"รหัสนี้มีสถานะ {participation.status.value} แล้ว"
+            detail=f"รหัสนี้มีสถานะ {participation.status.value if hasattr(participation.status, 'value') else participation.status} แล้ว"
         )
 
-    # ตรวจสอบว่ารหัสถูกใช้แล้วหรือยัง
-    if participation.code_used:
+    if hasattr(participation, 'code_used') and participation.code_used:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="รหัสนี้ถูกใช้ไปแล้ว"
         )
 
-    # ตรวจสอบว่ารหัสหมดอายุหรือยัง
-    if participation.is_code_expired:
-        # อัปเดตสถานะเป็น expired
+    if hasattr(participation, 'is_code_expired') and participation.is_code_expired:
         participation.status = ParticipationStatus.EXPIRED
         await db.commit()
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="รหัสนี้หมดอายุแล้ว (ต้องใช้ภายในวันเดียวกัน)"
+            detail="รหัสนี้หมดอายุแล้ว"
         )
 
-    # ✅ Check-in สำเร็จ
+    # Check-in สำเร็จ
     participation.status = ParticipationStatus.CHECKED_IN
     participation.checked_in_by = staff_id
     participation.checked_in_at = datetime.now(timezone.utc)
-    participation.code_used = True  # 🆕 ทำเครื่องหมายว่ารหัสถูกใช้แล้ว
+
+    if hasattr(participation, 'code_used'):
+        participation.code_used = True
 
     await db.commit()
     await db.refresh(participation)
 
-    # 🔔 แจ้งเตือน
+    # แจ้งเตือน
     if participation.event:
         await notification_crud.notify_check_in_success(
             db, participation.user_id, participation.event_id,
@@ -787,20 +776,8 @@ async def get_user_daily_checkin_stats(
         event_id: int
 ) -> dict:
     """
-    📊 ดึงสถิติการ check-in รายวันของผู้ใช้
-
-    Returns:
-        {
-            "user_id": 123,
-            "event_id": 456,
-            "total_days_registered": 15,
-            "total_days_checked_in": 12,
-            "total_days_expired": 2,
-            "current_streak": 5,  # วิ่งติดต่อกันกี่วัน
-            "checkin_calendar": [...]  # รายละเอียดแต่ละวัน
-        }
+    📊 สถิติการ check-in รายวัน
     """
-    # ดึงข้อมูลทั้งหมด
     result = await db.execute(
         select(EventParticipation)
         .where(
@@ -811,7 +788,6 @@ async def get_user_daily_checkin_stats(
     )
     participations = result.scalars().all()
 
-    # คำนวณสถิติ
     total_registered = len(participations)
     total_checked_in = sum(
         1 for p in participations
@@ -822,7 +798,7 @@ async def get_user_daily_checkin_stats(
         if p.status == ParticipationStatus.EXPIRED
     )
 
-    # คำนวณ streak (วิ่งติดต่อกัน)
+    # คำนวณ streak
     current_streak = 0
     sorted_dates = sorted([p.checkin_date for p in participations if p.checkin_date], reverse=True)
 
@@ -835,16 +811,15 @@ async def get_user_daily_checkin_stats(
             else:
                 break
 
-    # สร้าง calendar
     calendar = []
     for p in participations:
         calendar.append({
             "date": p.checkin_date,
             "join_code": p.join_code,
-            "status": p.status.value,
+            "status": p.status.value if hasattr(p.status, 'value') else p.status,
             "checked_in_at": p.checked_in_at,
-            "code_used": p.code_used,
-            "code_expired": p.is_code_expired
+            "code_used": getattr(p, 'code_used', False),
+            "code_expired": getattr(p, 'is_code_expired', False)
         })
 
     return {

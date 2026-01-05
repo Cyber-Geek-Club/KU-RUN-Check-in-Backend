@@ -195,23 +195,25 @@ async def join_event_daily(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """Register for a daily event (once per day)"""
-    # Logic is now handled in CRUD
-    result = await event_participation_crud.create_daily_participation(
+    """
+    🆕 ลงทะเบียนเข้าร่วมกิจกรรมแบบรายวัน
+
+    สำหรับกิจกรรมที่อนุญาตให้ลงทะเบียนได้หลายครั้ง (1 ครั้งต่อวัน)
+    """
+    return await event_participation_crud.create_daily_participation(
         db, participation, current_user.id
     )
-    if not result:
-        raise HTTPException(status_code=400, detail="Cannot join: Limit reached or event invalid")
-    return result
 
 
 @router.get("/check-daily-limit/{event_id}")
-async def check_daily_registration_limit(
+async def check_daily_registration_limit_endpoint(
         event_id: int,
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """Check if user can register today"""
+    """
+    🔍 ตรวจสอบว่าสามารถลงทะเบียนวันนี้ได้หรือไม่
+    """
     return await event_participation_crud.check_daily_registration_limit(
         db, current_user.id, event_id
     )
@@ -223,21 +225,23 @@ async def check_in_daily(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(require_staff_or_organizer)
 ):
-    """Staff checks in a user using OTP-like code"""
-    participation = await event_participation_crud.check_in_with_code(
+    """
+    🆕 Check-in ด้วยรหัสแบบใช้ครั้งเดียว
+    """
+    return await event_participation_crud.check_in_with_code(
         db, check_in_data.join_code, current_user.id
     )
-    if not participation:
-        raise HTTPException(status_code=400, detail="Invalid code, expired, or already used")
-    return participation
 
 
-@router.get("/daily-stats/{event_id}", response_model=Dict)
+@router.get("/daily-stats/{event_id}")
 async def get_daily_checkin_stats(
         event_id: int,
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
+    """
+    📊 ดูสถิติการ check-in รายวันของตัวเอง
+    """
     return await event_participation_crud.get_user_daily_checkin_stats(
         db, current_user.id, event_id
     )
@@ -249,7 +253,38 @@ async def get_my_active_codes(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """Get active codes (Moved SQL to CRUD)"""
-    return await event_participation_crud.get_user_active_codes(
-        db, current_user.id, event_id
+    """
+    📱 ดูรหัสที่ยังใช้งานได้ของตัวเอง
+    """
+    from sqlalchemy.future import select
+    from src.models.event_participation import EventParticipation
+
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            EventParticipation.user_id == current_user.id,
+            EventParticipation.event_id == event_id
+        )
+        .order_by(EventParticipation.checkin_date.desc())
+        .limit(30)
     )
+    participations = result.scalars().all()
+
+    codes = []
+    for p in participations:
+        codes.append({
+            "date": p.checkin_date,
+            "join_code": p.join_code,
+            "status": p.status.value if hasattr(p.status, 'value') else p.status,
+            "code_used": p.code_used,
+            "code_expired": p.is_code_expired,
+            "can_use": p.can_use_code,
+            "expires_at": p.code_expires_at,
+            "checked_in_at": p.checked_in_at
+        })
+
+    return {
+        "event_id": event_id,
+        "total_codes": len(codes),
+        "codes": codes
+    }
