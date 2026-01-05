@@ -233,3 +233,6 @@ async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any
         "is_full": event.is_full,
         "can_join": not event.is_full and event.is_active and event.is_published
     }
+
+
+

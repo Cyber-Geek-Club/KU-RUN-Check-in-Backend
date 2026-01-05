@@ -22,10 +22,15 @@ class EventParticipationCheckIn(BaseModel):
     join_code: str
 
 
+class EventParticipationCheckOut(BaseModel):
+    """🆕 Schema สำหรับ Check-out"""
+    join_code: str
+
+
 class EventParticipationProofSubmit(BaseModel):
     """ส่งหลักฐานการวิ่ง"""
     proof_image_url: str
-    image_hash: Optional[str] = Field(None, description="Perceptual hash for duplicate detection")  # 🆕
+    image_hash: Optional[str] = Field(None, description="Perceptual hash for duplicate detection")
     strava_link: Optional[str] = Field(None, description="Strava activity link (optional)")
     actual_distance_km: Optional[Decimal] = Field(
         None,
@@ -62,20 +67,23 @@ class EventParticipationRead(EventParticipationBase):
     user_id: int
     join_code: str
     completion_code: Optional[str] = None
-    completion_rank: Optional[int] = None  # อันดับที่ผ่านเส้นชัย
+    completion_rank: Optional[int] = None
     status: ParticipationStatus
 
     # Proof
     proof_image_url: Optional[str] = None
-    proof_image_hash: Optional[str] = None  # 🆕
+    proof_image_hash: Optional[str] = None
     proof_submitted_at: Optional[datetime] = None
 
-    # 🆕 Strava & Distance tracking
+    # Strava & Distance tracking
     strava_link: Optional[str] = None
     actual_distance_km: Optional[Decimal] = None
 
     # Check-in
     checked_in_at: Optional[datetime] = None
+
+    # 🆕 Check-out
+    checked_out_at: Optional[datetime] = None
 
     # Completion
     completed_at: Optional[datetime] = None
@@ -102,11 +110,11 @@ class EventParticipationRead(EventParticipationBase):
 class UserStatistics(BaseModel):
     """สถิติการวิ่งของผู้ใช้"""
     user_id: int
-    total_events_joined: int  # จำนวนงานที่ลงทะเบียนทั้งหมด
-    total_events_completed: int  # จำนวนงานที่วิ่งสำเร็จ
-    total_distance_km: Decimal  # ระยะทางรวมที่วิ่ง (กม.)
-    completion_rate: float  # เปอร์เซ็นต์การวิ่งสำเร็จ
-    current_month_completions: int  # จำนวนครั้งที่วิ่งสำเร็จในเดือนนี้
+    total_events_joined: int
+    total_events_completed: int
+    total_distance_km: Decimal
+    completion_rate: float
+    current_month_completions: int
 
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)

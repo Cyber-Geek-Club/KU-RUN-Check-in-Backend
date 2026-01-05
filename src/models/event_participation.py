@@ -10,11 +10,12 @@ from src.models.base import Base
 class ParticipationStatus(str, enum.Enum):
     JOINED = "joined"                   # ลงทะเบียนแล้ว (รอ check-in)
     CHECKED_IN = "checked_in"           # Check-in แล้ว (ใช้รหัสแล้ว)
+    CHECKED_OUT = "checked_out"         # 🆕 Check-out แล้ว (ออกจากงานแล้ว)
     PROOF_SUBMITTED = "proof_submitted"
     COMPLETED = "completed"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
-    EXPIRED = "expired"                 # 🆕 รหัสหมดอายุ (ไม่ได้ check-in ภายในวัน)
+    EXPIRED = "expired"                 # รหัสหมดอายุ (ไม่ได้ check-in ภายในวัน)
 
 
 class EventParticipation(Base):
@@ -52,6 +53,10 @@ class EventParticipation(Base):
     checked_in_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     checked_in_at = Column(DateTime(timezone=True), nullable=True)
 
+    # 🆕 Check-out tracking
+    checked_out_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    checked_out_at = Column(DateTime(timezone=True), nullable=True)
+
     completed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     completion_rank = Column(Integer, nullable=True, index=True)
@@ -74,6 +79,7 @@ class EventParticipation(Base):
     user = relationship("User", back_populates="participations", foreign_keys=[user_id])
     event = relationship("Event", back_populates="participations")
     staff_checked_in = relationship("User", foreign_keys=[checked_in_by])
+    staff_checked_out = relationship("User", foreign_keys=[checked_out_by])  # 🆕
     staff_completed = relationship("User", foreign_keys=[completed_by])
     staff_rejected = relationship("User", foreign_keys=[rejected_by])
 

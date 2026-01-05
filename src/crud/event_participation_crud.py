@@ -831,3 +831,45 @@ async def get_user_daily_checkin_stats(
         "current_streak": current_streak,
         "checkin_calendar": calendar
     }
+
+
+# เพิ่ม function นี้ใน src/crud/event_participation_crud.py
+# (หลังจาก check_in_participation และก่อน submit_proof)
+
+async def check_out_participation(db: AsyncSession, join_code: str, staff_id: int) -> Optional[EventParticipation]:
+    """
+    🆕 Check-out participant หลังจบกิจกรรม
+
+    Args:
+        db: Database session
+        join_code: รหัส check-in
+        staff_id: ID ของ staff ที่ทำการ check-out
+
+    Returns:
+        EventParticipation ถ้าสำเร็จ, None ถ้าไม่สำเร็จ
+    """
+    participation = await get_participation_by_join_code(db, join_code)
+
+    # ตรวจสอบเงื่อนไข
+    if not participation:
+        return None
+
+    if participation.status != ParticipationStatus.CHECKED_IN:
+        return None
+
+    # Check-out
+    participation.status = ParticipationStatus.CHECKED_OUT
+    participation.checked_out_by = staff_id
+    participation.checked_out_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(participation)
+
+    # 🔔 Notify: Check-out Success
+    if participation.event:
+        await notification_crud.notify_check_out_success(
+            db, participation.user_id, participation.event_id,
+            participation.id, participation.event.title
+        )
+
+    return participation

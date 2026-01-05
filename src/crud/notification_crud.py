@@ -437,3 +437,25 @@ async def notify_reward_earned(
         channel=channel,
         reward_id=reward_id
     )
+# เพิ่ม function นี้ต่อท้ายไฟล์ src/crud/notification_crud.py
+# (หลังจาก notify_check_in_success และก่อน notify_proof_submitted)
+
+async def notify_check_out_success(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int,
+        participation_id: int,
+        event_title: str,
+        channel: NotificationChannel = NotificationChannel.IN_APP
+):
+    """🆕 แจ้งเตือนเมื่อ check-out สำเร็จ"""
+    return await create_notification(
+        db=db,
+        user_id=user_id,
+        notification_type=NotificationType.CHECK_IN_SUCCESS,  # ใช้ type เดียวกัน
+        title="Check-out สำเร็จ! 👋",
+        message=f'คุณได้ทำการ check-out จากงาน "{event_title}" เรียบร้อยแล้ว ขอบคุณที่เข้าร่วม!',
+        channel=channel,
+        event_id=event_id,
+        participation_id=participation_id
+    )

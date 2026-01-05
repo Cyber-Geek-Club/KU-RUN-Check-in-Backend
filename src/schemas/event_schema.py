@@ -71,6 +71,11 @@ class EventUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_published: Optional[bool] = None
 
+    # 🆕 Daily check-in fields
+    event_type: Optional[EventType] = None
+    allow_daily_checkin: Optional[bool] = None
+    max_checkins_per_user: Optional[int] = None
+
     @field_validator('banner_image_url', mode='before')
     @classmethod
     def validate_banner_url(cls, v):
@@ -124,6 +129,11 @@ class EventRead(EventBase):
     created_at: datetime
     updated_at: datetime
 
+    # 🆕 Daily check-in fields (แสดงค่าจริงจากฐานข้อมูล)
+    event_type: EventType
+    allow_daily_checkin: bool
+    max_checkins_per_user: Optional[int] = None
+
     # ข้อมูลผู้เข้าร่วม - แสดงอัตโนมัติเสมอ
     participant_count: int
     remaining_slots: int  # ที่ว่างที่เหลือ (-1 = ไม่จำกัด)
@@ -149,7 +159,15 @@ class EventSummary(BaseModel):
     id: int
     title: str
     event_date: datetime
+    event_end_date: Optional[datetime] = None
     location: Optional[str] = None
+
+    # 🆕 Daily check-in info
+    event_type: EventType
+    allow_daily_checkin: bool
+    max_checkins_per_user: Optional[int] = None
+
+    # Participant info
     participant_count: int
     max_participants: Optional[int] = None
     remaining_slots: int
