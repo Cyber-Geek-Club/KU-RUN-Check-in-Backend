@@ -14,9 +14,9 @@ handlers:
   file:
     class: logging.handlers.RotatingFileHandler
     formatter: default
-    filename: server.log    # ชื่อไฟล์ Log ที่ต้องการ
-    maxBytes: 10485760      # ขนาดไฟล์สูงสุด (10MB) แล้วจะตัดไฟล์ใหม่
-    backupCount: 5          # เก็บไฟล์ย้อนหลัง 5 ไฟล์
+    filename: server.log
+    maxBytes: 10485760
+    backupCount: 5
     encoding: utf8
 
 loggers:
