@@ -1,6 +1,7 @@
 from pydantic import BaseModel, computed_field, field_validator
 from datetime import datetime
 from typing import Optional, Dict, List
+from src.models.event import EventType
 
 try:
     from pydantic import ConfigDict
@@ -17,6 +18,11 @@ class EventBase(BaseModel):
     distance_km: Optional[int] = None
     max_participants: Optional[int] = None
     banner_image_url: Optional[str] = None
+
+    # 🆕 Daily check-in fields
+    event_type: Optional[EventType] = EventType.SINGLE_DAY
+    allow_daily_checkin: Optional[bool] = False
+    max_checkins_per_user: Optional[int] = None
 
     @field_validator('banner_image_url', mode='before')
     @classmethod
