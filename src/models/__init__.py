@@ -4,7 +4,7 @@ from src.models.event import Event
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.reward import Reward, UserReward
 from src.models.password_reset_log import PasswordResetLog
-from src.models.task import Task
+from src.models.notification import Notification, NotificationType
 
 __all__ = [
     "Base",
@@ -16,5 +16,6 @@ __all__ = [
     "Reward",
     "UserReward",
     "PasswordResetLog",
-    "Task",
+    "Notification",
+    "NotificationType",
 ]

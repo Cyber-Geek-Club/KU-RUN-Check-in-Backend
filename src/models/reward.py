@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.models.base import Base
 
@@ -12,14 +12,14 @@ class Reward(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    badge_image_url = Column(String(500), nullable=True)
+    badge_image_url = Column(Text, nullable=True)
     
     # Criteria for earning this reward
     required_completions = Column(Integer, default=3)  # จำนวนครั้งที่ต้องวิ่งสำเร็จ
     time_period_days = Column(Integer, default=30)  # ภายในกี่วัน (e.g., 30 = 1 เดือน)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
