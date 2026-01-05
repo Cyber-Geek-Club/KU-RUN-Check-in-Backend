@@ -197,13 +197,10 @@ async def join_event_daily(
 ):
     """
     🆕 ลงทะเบียนเข้าร่วมกิจกรรมแบบรายวัน
-
-    สำหรับกิจกรรมที่อนุญาตให้ลงทะเบียนได้หลายครั้ง (1 ครั้งต่อวัน)
     """
     return await event_participation_crud.create_daily_participation(
         db, participation, current_user.id
     )
-
 
 @router.get("/check-daily-limit/{event_id}")
 async def check_daily_registration_limit_endpoint(
@@ -217,7 +214,6 @@ async def check_daily_registration_limit_endpoint(
     return await event_participation_crud.check_daily_registration_limit(
         db, current_user.id, event_id
     )
-
 
 @router.post("/check-in-daily", response_model=EventParticipationRead)
 async def check_in_daily(
