@@ -9,6 +9,13 @@ from src.schemas.event_schema import EventCreate, EventUpdate, ParticipantStats,
 from typing import Optional, Dict, List
 
 
+def get_value_safe(obj, default=None):
+    """Safely get value from enum or string"""
+    if obj is None:
+        return default
+    return obj.value if hasattr(obj, 'value') else obj
+
+
 async def get_event_participant_stats(db: AsyncSession, event_id: int) -> ParticipantStats:
     """ดึงสถิติผู้เข้าร่วมแบบละเอียด"""
     result = await db.execute(
@@ -16,7 +23,7 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
         .join(User, EventParticipation.user_id == User.id)
         .where(
             EventParticipation.event_id == event_id,
-            EventParticipation.status != ParticipationStatus.CANCELLED
+            EventParticipation.status != "cancelled"  # Use string comparison for safety
         )
     )
     participations = result.all()
@@ -25,10 +32,11 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
     by_role: Dict[str, int] = {}
 
     for participation, user in participations:
-        status = participation.status.value
+        # Handle both enum and string values safely
+        status = get_value_safe(participation.status, "unknown")
         by_status[status] = by_status.get(status, 0) + 1
 
-        role = user.role.value
+        role = get_value_safe(user.role, "unknown")
         by_role[role] = by_role.get(role, 0) + 1
 
     return ParticipantStats(
@@ -50,13 +58,17 @@ async def get_event_participants(db: AsyncSession, event_id: int) -> List[Partic
 
     participants = []
     for participation, user in participations:
+        # Handle both enum and string status/role values
+        status = get_value_safe(participation.status, "unknown")
+        role = get_value_safe(user.role, "unknown")
+
         participants.append(ParticipantInfo(
             user_id=user.id,
             first_name=user.first_name,
             last_name=user.last_name,
-            role=user.role.value,
+            role=role,
             email=user.email,
-            status=participation.status.value,
+            status=status,
             joined_at=participation.joined_at
         ))
 
@@ -82,7 +94,7 @@ async def get_event_with_participants_dict(db: AsyncSession, event_id: int) -> O
         "id": event.id,
         "title": event.title,
         "description": event.description,
-        "event_type": event.event_type,
+        "event_type": get_value_safe(event.event_type, "single_day"),
         "event_date": event.event_date,
         "event_end_date": event.event_end_date,
         "location": event.location,
@@ -96,8 +108,8 @@ async def get_event_with_participants_dict(db: AsyncSession, event_id: int) -> O
         "updated_at": event.updated_at,
 
         # Daily check-in fields
-        "allow_daily_checkin": event.allow_daily_checkin,
-        "max_checkins_per_user": event.max_checkins_per_user,
+        "allow_daily_checkin": event.allow_daily_checkin if hasattr(event, 'allow_daily_checkin') else False,
+        "max_checkins_per_user": event.max_checkins_per_user if hasattr(event, 'max_checkins_per_user') else None,
 
         # Computed fields
         "participant_count": event.participant_count,
@@ -230,20 +242,13 @@ async def get_events_by_creator(db: AsyncSession, creator_id: int) -> List[Event
 async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[LeaderboardEntry]:
     """
     ดึง Leaderboard - รายชื่อผู้ที่ผ่านเส้นชัยเรียงตามอันดับ
-
-    Args:
-        db: Database session
-        event_id: ID ของงาน
-
-    Returns:
-        List ของผู้ผ่านเส้นชัยเรียงตาม completion_rank
     """
     result = await db.execute(
         select(EventParticipation, User)
         .join(User, EventParticipation.user_id == User.id)
         .where(
             EventParticipation.event_id == event_id,
-            EventParticipation.status == ParticipationStatus.COMPLETED,
+            EventParticipation.status == "completed",  # Use string for safety
             EventParticipation.completion_rank.isnot(None)
         )
         .order_by(EventParticipation.completion_rank.asc())
@@ -253,13 +258,15 @@ async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[Leaderb
 
     leaderboard = []
     for participation, user in participations:
+        role = get_value_safe(user.role, "unknown")
+
         leaderboard.append(LeaderboardEntry(
             rank=participation.completion_rank,
             user_id=user.id,
             first_name=user.first_name,
             last_name=user.last_name,
             full_name=f"{user.first_name} {user.last_name}",
-            role=user.role.value,
+            role=role,
             completion_code=participation.completion_code,
             completed_at=participation.completed_at,
             participation_id=participation.id
