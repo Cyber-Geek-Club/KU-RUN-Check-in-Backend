@@ -137,39 +137,18 @@ async def get_event_with_participants(
 
     ดึงข้อมูลงานพร้อมรายชื่อผู้เข้าร่วมทั้งหมด (เฉพาะ staff/organizer)
     """
-    event = await event_crud.get_event_by_id(db, event_id, include_stats=True)
-    if not event:
+    # ✅ ใช้ฟังก์ชันใหม่ที่จัดการ default values
+    from src.crud import event_crud
+
+    event_dict = await event_crud.get_event_with_participants_dict(db, event_id)
+
+    if not event_dict:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found"
         )
 
-    participants = await event_crud.get_event_participants(db, event_id)
-
-    event_dict = {
-        "id": event.id,
-        "title": event.title,
-        "description": event.description,
-        "event_date": event.event_date,
-        "event_end_date": event.event_end_date,
-        "location": event.location,
-        "distance_km": event.distance_km,
-        "max_participants": event.max_participants,
-        "banner_image_url": event.banner_image_url,
-        "is_active": event.is_active,
-        "is_published": event.is_published,
-        "created_by": event.created_by,
-        "created_at": event.created_at,
-        "updated_at": event.updated_at,
-        "participant_count": event.participant_count,
-        "remaining_slots": event.remaining_slots,
-        "is_full": event.is_full,
-        "participant_stats": event.participant_stats,
-        "participants": participants
-    }
-
     return event_dict
-
 
 @router.post("/", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 async def create_event(

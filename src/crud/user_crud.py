@@ -1,306 +1,303 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.user import User, Student, Officer, Staff, Organizer, UserRole
-from src.schemas.user_schema import (
-    UserCreate, UserUpdate,
-    StudentCreate, OfficerCreate, StaffCreate, OrganizerCreate
-)
-from typing import Optional, Union
-from datetime import datetime, timedelta, timezone
-import bcrypt
-import secrets
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+from src.models.event import Event
+from src.models.event_participation import EventParticipation, ParticipationStatus
+from src.models.user import User
+from src.schemas.event_schema import EventCreate, EventUpdate, ParticipantStats, ParticipantInfo, LeaderboardEntry
+from typing import Optional, Dict, List
 
 
-def hash_password(password: str) -> str:
-    """Hash password using bcrypt directly."""
-    password_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password_bytes, salt)
-    return hashed.decode('utf-8')
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against bcrypt hash."""
-    try:
-        password_bytes = plain_password.encode('utf-8')
-        hashed_bytes = hashed_password.encode('utf-8')
-        return bcrypt.checkpw(password_bytes, hashed_bytes)
-    except Exception:
-        return False
-
-
-def generate_verification_token() -> str:
-    """Generate a secure random token for email verification"""
-    return secrets.token_urlsafe(32)
-
-
-async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
-
-
-async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()
-
-
-async def get_user_by_verification_token(db: AsyncSession, token: str) -> Optional[User]:
+async def get_event_participant_stats(db: AsyncSession, event_id: int) -> ParticipantStats:
+    """ดึงสถิติผู้เข้าร่วมแบบละเอียด"""
     result = await db.execute(
-        select(User).where(User.verification_token == token)
+        select(EventParticipation, User)
+        .join(User, EventParticipation.user_id == User.id)
+        .where(
+            EventParticipation.event_id == event_id,
+            EventParticipation.status != ParticipationStatus.CANCELLED
+        )
     )
-    return result.scalar_one_or_none()
+    participations = result.all()
+
+    by_status: Dict[str, int] = {}
+    by_role: Dict[str, int] = {}
+
+    for participation, user in participations:
+        # ✅ แก้ไข: ตรวจสอบว่า status เป็น Enum หรือ string
+        if hasattr(participation.status, 'value'):
+            status = participation.status.value
+        else:
+            status = participation.status
+
+        by_status[status] = by_status.get(status, 0) + 1
+
+        # ✅ แก้ไข: ตรวจสอบว่า role เป็น Enum หรือ string
+        if hasattr(user.role, 'value'):
+            role = user.role.value
+        else:
+            role = user.role
+
+        by_role[role] = by_role.get(role, 0) + 1
+
+    return ParticipantStats(
+        total=len(participations),
+        by_status=by_status,
+        by_role=by_role
+    )
 
 
-async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
-    result = await db.execute(select(User).offset(skip).limit(limit))
+async def get_event_participants(db: AsyncSession, event_id: int) -> List[ParticipantInfo]:
+    """ดึงรายชื่อผู้เข้าร่วมทั้งหมด"""
+    result = await db.execute(
+        select(EventParticipation, User)
+        .join(User, EventParticipation.user_id == User.id)
+        .where(EventParticipation.event_id == event_id)
+        .order_by(EventParticipation.joined_at.desc())
+    )
+    participations = result.all()
+
+    participants = []
+    for participation, user in participations:
+        # ✅ แก้ไข: ตรวจสอบว่า status เป็น Enum หรือ string
+        if hasattr(participation.status, 'value'):
+            status = participation.status.value
+        else:
+            status = participation.status
+
+        # ✅ แก้ไข: ตรวจสอบว่า role เป็น Enum หรือ string
+        if hasattr(user.role, 'value'):
+            role = user.role.value
+        else:
+            role = user.role
+
+        participants.append(ParticipantInfo(
+            user_id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            role=role,
+            email=user.email,
+            status=status,
+            joined_at=participation.joined_at
+        ))
+
+    return participants
+
+
+async def get_events(
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        is_published: Optional[bool] = None,
+        include_stats: bool = False
+) -> List[Event]:
+    """ดึงรายการงานทั้งหมด"""
+    query = select(Event).options(selectinload(Event.participations))
+
+    if is_published is not None:
+        query = query.where(Event.is_published == is_published)
+
+    query = query.offset(skip).limit(limit).order_by(Event.event_date.desc())
+
+    result = await db.execute(query)
+    events = result.scalars().all()
+
+    if include_stats:
+        for event in events:
+            event.participant_stats = await get_event_participant_stats(db, event.id)
+
+    return events
+
+
+async def get_event_by_id(
+        db: AsyncSession,
+        event_id: int,
+        include_stats: bool = False
+) -> Optional[Event]:
+    """ดึงข้อมูลงานตาม ID"""
+    result = await db.execute(
+        select(Event)
+        .options(selectinload(Event.participations))
+        .where(Event.id == event_id)
+    )
+    event = result.scalar_one_or_none()
+
+    if event and include_stats:
+        event.participant_stats = await get_event_participant_stats(db, event.id)
+
+    return event
+
+
+async def create_event(db: AsyncSession, event: EventCreate, created_by: int) -> Event:
+    """สร้างงานใหม่"""
+    db_event = Event(
+        **event.dict(),
+        created_by=created_by
+    )
+    db.add(db_event)
+    await db.commit()
+
+    await db.refresh(db_event, attribute_names=['participations'])
+
+    return db_event
+
+
+async def update_event(db: AsyncSession, event_id: int, event_data: EventUpdate) -> Optional[Event]:
+    """อัปเดตข้อมูลงาน"""
+    result = await db.execute(
+        select(Event)
+        .options(selectinload(Event.participations))
+        .where(Event.id == event_id)
+    )
+    event = result.scalar_one_or_none()
+
+    if not event:
+        return None
+
+    for key, value in event_data.dict(exclude_unset=True).items():
+        setattr(event, key, value)
+
+    await db.commit()
+    await db.refresh(event, attribute_names=['participations'])
+
+    return event
+
+
+async def delete_event(db: AsyncSession, event_id: int) -> bool:
+    """ลบงาน"""
+    try:
+        result = await db.execute(
+            select(Event)
+            .options(selectinload(Event.participations))
+            .where(Event.id == event_id)
+        )
+        event = result.scalar_one_or_none()
+
+        if not event:
+            return False
+
+        await db.delete(event)
+        await db.commit()
+        return True
+
+    except Exception as e:
+        await db.rollback()
+        print(f"Error deleting event: {e}")
+        raise
+
+
+async def get_events_by_creator(db: AsyncSession, creator_id: int) -> List[Event]:
+    """ดึงงานที่สร้างโดย user คนนั้น"""
+    result = await db.execute(
+        select(Event)
+        .options(selectinload(Event.participations))
+        .where(Event.created_by == creator_id)
+        .order_by(Event.created_at.desc())
+    )
     return result.scalars().all()
 
 
-async def create_user(db: AsyncSession, user: UserCreate) -> User:
-    """Legacy create_user - for backward compatibility"""
-    hashed_password = hash_password(user.password)
-    verification_token = generate_verification_token()
-
-    db_user = User(
-        email=user.email,
-        password_hash=hashed_password,
-        title=user.title,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        role=user.role,
-        is_verified=False,
-        verification_token=verification_token,
-        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
-    )
-
-    db.add(db_user)
-    await db.commit()
-    await db.refresh(db_user)
-    return db_user
-
-
-async def create_student(db: AsyncSession, student: StudentCreate) -> Student:
-    """สร้างนักศึกษาใหม่"""
-    hashed_password = hash_password(student.password)
-    verification_token = generate_verification_token()
-
-    db_student = Student(
-        email=student.email,
-        password_hash=hashed_password,
-        title=student.title,
-        first_name=student.first_name,
-        last_name=student.last_name,
-        role=UserRole.STUDENT,
-        nisit_id=student.nisit_id,
-        major=student.major,
-        faculty=student.faculty,
-        is_verified=False,
-        verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
-    )
-
-    db.add(db_student)
-    await db.commit()
-    await db.refresh(db_student)
-    return db_student
-
-
-async def create_officer(db: AsyncSession, officer: OfficerCreate) -> Officer:
-    """สร้างเจ้าหน้าที่ใหม่"""
-    hashed_password = hash_password(officer.password)
-    verification_token = generate_verification_token()
-
-    db_officer = Officer(
-        email=officer.email,
-        password_hash=hashed_password,
-        title=officer.title,
-        first_name=officer.first_name,
-        last_name=officer.last_name,
-        role=UserRole.OFFICER,
-        department=officer.department,
-        is_verified=False,
-        verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
-    )
-
-    db.add(db_officer)
-    await db.commit()
-    await db.refresh(db_officer)
-    return db_officer
-
-
-async def create_staff(db: AsyncSession, staff: StaffCreate) -> Staff:
-    """สร้างพนักงานใหม่"""
-    hashed_password = hash_password(staff.password)
-    verification_token = generate_verification_token()
-
-    db_staff = Staff(
-        email=staff.email,
-        password_hash=hashed_password,
-        title=staff.title,
-        first_name=staff.first_name,
-        last_name=staff.last_name,
-        role=UserRole.STAFF,
-        department=staff.department,
-        is_verified=False,
-        verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
-    )
-
-    db.add(db_staff)
-    await db.commit()
-    await db.refresh(db_staff)
-    return db_staff
-
-
-async def create_organizer(db: AsyncSession, organizer: OrganizerCreate) -> Organizer:
-    """สร้างผู้จัดงานใหม่ (ไม่มีข้อมูลเพิ่มเติม)"""
-    hashed_password = hash_password(organizer.password)
-    verification_token = generate_verification_token()
-
-    db_organizer = Organizer(
-        email=organizer.email,
-        password_hash=hashed_password,
-        title=organizer.title,
-        first_name=organizer.first_name,
-        last_name=organizer.last_name,
-        role=UserRole.ORGANIZER,
-        is_verified=False,
-        verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
-    )
-
-    db.add(db_organizer)
-    await db.commit()
-    await db.refresh(db_organizer)
-    return db_organizer
-
-
-async def get_student_by_nisit_id(db: AsyncSession, nisit_id: str) -> Optional[Student]:
-    """ค้นหานักศึกษาจาก nisit_id"""
-    result = await db.execute(select(Student).where(Student.nisit_id == nisit_id))
-    return result.scalar_one_or_none()
-
-
-async def verify_user_email(db: AsyncSession, token: str) -> Optional[User]:
-    """Verify user's email using verification token"""
-    user = await get_user_by_verification_token(db, token)
-
-    if not user:
+async def get_event_with_participants_dict(db: AsyncSession, event_id: int) -> dict:
+    """
+    ดึงข้อมูล event พร้อม participants เป็น dict
+    """
+    event = await get_event_by_id(db, event_id, include_stats=True)
+    if not event:
         return None
 
-    # Check if token has expired
-    if user.verification_token_expires < datetime.now(timezone.utc):
-        return None
+    participants = await get_event_participants(db, event_id)
 
-    # Verify the user
-    user.is_verified = True
-    user.verification_token = None
-    user.verification_token_expires = None
+    # ส่งค่า default สำหรับ fields ที่อาจไม่มีในฐานข้อมูล
+    return {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "event_date": event.event_date,
+        "event_end_date": event.event_end_date,
+        "location": event.location,
+        "distance_km": event.distance_km,
+        "max_participants": event.max_participants,
+        "banner_image_url": event.banner_image_url,
 
-    await db.commit()
-    return user
+        # ✅ ส่งค่า default สำหรับ fields ใหม่
+        "event_type": getattr(event, 'event_type', 'single_day'),
+        "allow_daily_checkin": getattr(event, 'allow_daily_checkin', False),
+        "max_checkins_per_user": getattr(event, 'max_checkins_per_user', None),
 
-
-async def resend_verification_email(db: AsyncSession, email: str) -> Optional[User]:
-    """Generate new verification token for user"""
-    user = await get_user_by_email(db, email)
-
-    if not user or user.is_verified:
-        return None
-
-    # Generate new token
-    user.verification_token = generate_verification_token()
-    user.verification_token_expires = datetime.now(timezone.utc) + timedelta(hours=24)
-
-    await db.commit()
-    return user
-
-
-async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> Optional[User]:
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        return None
-
-    for key, value in user_data.dict(exclude_unset=True).items():
-        setattr(user, key, value)
-
-    await db.commit()
-    return user
+        "is_active": event.is_active,
+        "is_published": event.is_published,
+        "created_by": event.created_by,
+        "created_at": event.created_at,
+        "updated_at": event.updated_at,
+        "participant_count": event.participant_count,
+        "remaining_slots": event.remaining_slots,
+        "is_full": event.is_full,
+        "participant_stats": event.participant_stats,
+        "participants": participants
+    }
 
 
-async def delete_user(db: AsyncSession, user_id: int) -> bool:
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        return False
+async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[LeaderboardEntry]:
+    """
+    ดึง Leaderboard - รายชื่อผู้ที่ผ่านเส้นชัยเรียงตามอันดับ
 
-    await db.delete(user)
-    await db.commit()
-    return True
+    Args:
+        db: Database session
+        event_id: ID ของงาน
 
-
-async def request_password_reset(db: AsyncSession, email: str) -> Optional[User]:
-    """Generate password reset token"""
-    user = await get_user_by_email(db, email)
-    if not user:
-        return None
-
-    user.reset_token = generate_verification_token()
-    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
-
-    await db.commit()
-    return user
-
-
-async def reset_password(db: AsyncSession, token: str, new_password: str) -> Optional[User]:
-    """Reset password using reset token"""
+    Returns:
+        List ของผู้ผ่านเส้นชัยเรียงตาม completion_rank
+    """
     result = await db.execute(
-        select(User).where(User.reset_token == token)
+        select(EventParticipation, User)
+        .join(User, EventParticipation.user_id == User.id)
+        .where(
+            EventParticipation.event_id == event_id,
+            EventParticipation.status == ParticipationStatus.COMPLETED,
+            EventParticipation.completion_rank.isnot(None)
+        )
+        .order_by(EventParticipation.completion_rank.asc())
     )
-    user = result.scalar_one_or_none()
 
-    if not user or user.reset_token_expires < datetime.now(timezone.utc):
+    participations = result.all()
+
+    leaderboard = []
+    for participation, user in participations:
+        # ✅ แก้ไข: ตรวจสอบว่า role เป็น Enum หรือ string
+        if hasattr(user.role, 'value'):
+            role = user.role.value
+        else:
+            role = user.role
+
+        leaderboard.append(LeaderboardEntry(
+            rank=participation.completion_rank,
+            user_id=user.id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            full_name=f"{user.first_name} {user.last_name}",
+            role=role,
+            completion_code=participation.completion_code,
+            completed_at=participation.completed_at,
+            participation_id=participation.id
+        ))
+
+    return leaderboard
+
+
+async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any]:
+    """ตรวจสอบความจุของงาน"""
+    event = await get_event_by_id(db, event_id)
+
+    if not event:
         return None
 
-    user.password_hash = hash_password(new_password)
-    user.reset_token = None
-    user.reset_token_expires = None
-
-    await db.commit()
-    return user
-
-
-async def increment_failed_login(db: AsyncSession, user: User) -> User:
-    """Increment failed login attempts and lock account if threshold reached"""
-    user.failed_login_attempts += 1
-
-    # Lock account if failed attempts reach 10
-    if user.failed_login_attempts >= 10:
-        user.is_locked = True
-        user.locked_at = datetime.utcnow()
-
-    await db.commit()
-    return user
-
-
-async def reset_failed_login(db: AsyncSession, user: User) -> User:
-    """Reset failed login attempts on successful login"""
-    user.failed_login_attempts = 0
-    await db.commit()
-    return user
-
-
-async def unlock_account(db: AsyncSession, user_id: int) -> Optional[User]:
-    """Unlock a locked user account (for organizers)"""
-    user = await get_user_by_id(db, user_id)
-    if not user:
-        return None
-
-    user.is_locked = False
-    user.failed_login_attempts = 0
-    user.locked_at = None
-
-    await db.commit()
-    return user
+    return {
+        "event_id": event.id,
+        "title": event.title,
+        "current_participants": event.participant_count,
+        "max_participants": event.max_participants,
+        "remaining_slots": event.remaining_slots,
+        "is_full": event.is_full,
+        "can_join": not event.is_full and event.is_active and event.is_published
+    }
