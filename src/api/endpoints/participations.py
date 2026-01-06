@@ -968,3 +968,153 @@ async def get_quick_stats(
         "currently_in_events": currently_in.scalar() or 0,
         "timestamp": datetime.now(timezone.utc)
     }
+
+
+@router.get("/event/{event_id}/proofs")
+async def get_event_proofs(
+        event_id: int,
+        status: Optional[str] = None,  # "proof_submitted", "completed", "rejected"
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    📋 ดึงรายการ Proof ทั้งหมดของงาน (พร้อมรูปภาพ)
+    Requires: Staff or Organizer role
+
+    - **event_id**: ID ของงาน
+    - **status**: กรองตาม status (optional)
+      - "proof_submitted" - รอตรวจสอบ
+      - "completed" - ผ่านแล้ว
+      - "rejected" - ไม่ผ่าน
+
+    **Returns:** รายการ proof พร้อม URL รูปภาพ
+    """
+    # Build query
+    query = select(EventParticipation, User) \
+        .join(User, EventParticipation.user_id == User.id) \
+        .where(
+        EventParticipation.event_id == event_id,
+        EventParticipation.proof_image_url.isnot(None)  # มี proof เท่านั้น
+    )
+
+    # Filter by status
+    if status:
+        query = query.where(EventParticipation.status == status)
+    else:
+        # Default: ดึงเฉพาะที่ส่ง proof แล้ว
+        query = query.where(
+            EventParticipation.status.in_([
+                'proof_submitted',
+                'completed',
+                'rejected'
+            ])
+        )
+
+    query = query.order_by(EventParticipation.proof_submitted_at.desc())
+
+    result = await db.execute(query)
+    participations = result.all()
+
+    # Format response
+    proofs = []
+    for participation, user in participations:
+        # Safe value extraction
+        def get_val(obj):
+            return obj.value if hasattr(obj, 'value') else obj
+
+        proofs.append({
+            "participation_id": participation.id,
+            "join_code": participation.join_code,
+            "user": {
+                "id": user.id,
+                "full_name": f"{user.first_name} {user.last_name}",
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "role": get_val(user.role)
+            },
+            "status": get_val(participation.status),
+
+            # 🖼️ Proof Image URL - ใช้ตัวนี้แสดงรูป
+            "proof_image_url": participation.proof_image_url,
+            "proof_image_hash": participation.proof_image_hash,
+            "proof_submitted_at": participation.proof_submitted_at,
+
+            # Strava & Distance
+            "strava_link": participation.strava_link,
+            "actual_distance_km": float(participation.actual_distance_km) if participation.actual_distance_km else None,
+
+            # Timestamps
+            "joined_at": participation.joined_at,
+            "checked_in_at": participation.checked_in_at,
+            "completed_at": participation.completed_at,
+
+            # Rejection info
+            "rejection_reason": participation.rejection_reason,
+            "rejected_at": participation.rejected_at
+        })
+
+    return {
+        "event_id": event_id,
+        "total_proofs": len(proofs),
+        "proofs": proofs
+    }
+
+
+@router.get("/pending-proofs")
+async def get_pending_proofs_all_events(
+        limit: int = 50,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    🔍 ดึงรายการ Proof ที่รอตรวจสอบทั้งหมด (ทุกงาน)
+    Requires: Staff or Organizer role
+
+    ใช้สำหรับ Dashboard - แสดงรายการที่ต้อง verify
+    """
+    query = select(EventParticipation, User, Event) \
+        .join(User, EventParticipation.user_id == User.id) \
+        .join(Event, EventParticipation.event_id == Event.id) \
+        .where(
+        EventParticipation.status == 'proof_submitted',
+        EventParticipation.proof_image_url.isnot(None)
+    ) \
+        .order_by(EventParticipation.proof_submitted_at.asc()) \
+        .limit(limit)
+
+    result = await db.execute(query)
+    participations = result.all()
+
+    pending = []
+    for participation, user, event in participations:
+        def get_val(obj):
+            return obj.value if hasattr(obj, 'value') else obj
+
+        pending.append({
+            "participation_id": participation.id,
+            "event": {
+                "id": event.id,
+                "title": event.title,
+                "event_date": event.event_date
+            },
+            "user": {
+                "id": user.id,
+                "full_name": f"{user.first_name} {user.last_name}",
+                "email": user.email,
+                "role": get_val(user.role)
+            },
+            "proof_image_url": participation.proof_image_url,
+            "proof_submitted_at": participation.proof_submitted_at,
+            "strava_link": participation.strava_link,
+            "actual_distance_km": float(participation.actual_distance_km) if participation.actual_distance_km else None,
+
+            # Time waiting
+            "waiting_minutes": int((datetime.now(
+                timezone.utc) - participation.proof_submitted_at).total_seconds() / 60) if participation.proof_submitted_at else 0
+        })
+
+    return {
+        "total_pending": len(pending),
+        "pending_proofs": pending
+    }
