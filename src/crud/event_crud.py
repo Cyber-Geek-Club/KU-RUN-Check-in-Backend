@@ -25,10 +25,20 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
     by_role: Dict[str, int] = {}
 
     for participation, user in participations:
-        status = participation.status.value
+        # ✅ แก้ไข: ตรวจสอบว่า status เป็น Enum หรือ string
+        if hasattr(participation.status, 'value'):
+            status = participation.status.value
+        else:
+            status = participation.status
+
         by_status[status] = by_status.get(status, 0) + 1
 
-        role = user.role.value
+        # ✅ แก้ไข: ตรวจสอบว่า role เป็น Enum หรือ string
+        if hasattr(user.role, 'value'):
+            role = user.role.value
+        else:
+            role = user.role
+
         by_role[role] = by_role.get(role, 0) + 1
 
     return ParticipantStats(
@@ -50,13 +60,25 @@ async def get_event_participants(db: AsyncSession, event_id: int) -> List[Partic
 
     participants = []
     for participation, user in participations:
+        # ✅ แก้ไข: ตรวจสอบว่า status เป็น Enum หรือ string
+        if hasattr(participation.status, 'value'):
+            status = participation.status.value
+        else:
+            status = participation.status
+
+        # ✅ แก้ไข: ตรวจสอบว่า role เป็น Enum หรือ string
+        if hasattr(user.role, 'value'):
+            role = user.role.value
+        else:
+            role = user.role
+
         participants.append(ParticipantInfo(
             user_id=user.id,
             first_name=user.first_name,
             last_name=user.last_name,
-            role=user.role.value,
+            role=role,
             email=user.email,
-            status=participation.status.value,
+            status=status,
             joined_at=participation.joined_at
         ))
 
@@ -202,13 +224,19 @@ async def get_event_leaderboard(db: AsyncSession, event_id: int) -> List[Leaderb
 
     leaderboard = []
     for participation, user in participations:
+        # ✅ แก้ไข: ตรวจสอบว่า role เป็น Enum หรือ string
+        if hasattr(user.role, 'value'):
+            role = user.role.value
+        else:
+            role = user.role
+
         leaderboard.append(LeaderboardEntry(
             rank=participation.completion_rank,
             user_id=user.id,
             first_name=user.first_name,
             last_name=user.last_name,
             full_name=f"{user.first_name} {user.last_name}",
-            role=user.role.value,
+            role=role,
             completion_code=participation.completion_code,
             completed_at=participation.completed_at,
             participation_id=participation.id
@@ -233,6 +261,3 @@ async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any
         "is_full": event.is_full,
         "can_join": not event.is_full and event.is_active and event.is_published
     }
-
-
-
