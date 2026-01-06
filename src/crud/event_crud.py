@@ -63,6 +63,57 @@ async def get_event_participants(db: AsyncSession, event_id: int) -> List[Partic
     return participants
 
 
+async def get_event_with_participants_dict(db: AsyncSession, event_id: int) -> Optional[Dict]:
+    """
+    ดึงข้อมูลงานพร้อมรายชื่อผู้เข้าร่วมในรูปแบบ dict
+    สำหรับ EventWithParticipants schema
+    """
+    # Get event
+    event = await get_event_by_id(db, event_id, include_stats=False)
+
+    if not event:
+        return None
+
+    # Get participants list
+    participants = await get_event_participants(db, event_id)
+
+    # Convert event to dict manually
+    event_dict = {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "event_type": event.event_type,
+        "event_date": event.event_date,
+        "event_end_date": event.event_end_date,
+        "location": event.location,
+        "distance_km": event.distance_km,
+        "max_participants": event.max_participants,
+        "banner_image_url": event.banner_image_url,
+        "is_active": event.is_active,
+        "is_published": event.is_published,
+        "created_by": event.created_by,
+        "created_at": event.created_at,
+        "updated_at": event.updated_at,
+
+        # Daily check-in fields
+        "allow_daily_checkin": event.allow_daily_checkin,
+        "max_checkins_per_user": event.max_checkins_per_user,
+
+        # Computed fields
+        "participant_count": event.participant_count,
+        "remaining_slots": event.remaining_slots,
+        "is_full": event.is_full,
+
+        # Participants list
+        "participants": participants,
+
+        # Optional stats (set to None since we're not including them)
+        "participant_stats": None
+    }
+
+    return event_dict
+
+
 async def get_events(
         db: AsyncSession,
         skip: int = 0,
@@ -233,6 +284,3 @@ async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any
         "is_full": event.is_full,
         "can_join": not event.is_full and event.is_active and event.is_published
     }
-
-
-
