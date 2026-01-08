@@ -13,7 +13,7 @@ from src.api.dependencies.auth import (
     get_db,
     get_current_user,
     require_staff_or_organizer,
-    require_organizer  # Added this assuming it exists in your auth.py
+    require_organizer
 )
 from src.crud import event_participation_crud, reward_crud, event_crud
 from src.schemas.event_participation_schema import (
@@ -27,7 +27,7 @@ from src.schemas.event_participation_schema import (
     UserStatistics
 )
 from src.models.user import User
-from src.models.event import Event  # Required for Joins
+from src.models.event import Event
 from src.models.event_participation import ParticipationStatus, EventParticipation
 from src.utils.image_hash import calculate_image_hash
 
@@ -78,20 +78,7 @@ async def get_user_statistics(
     return await event_participation_crud.get_user_statistics(db, user_id)
 
 
-@router.get("/{participation_id}", response_model=EventParticipationRead)
-async def get_participation(
-        participation_id: int,
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user)
-):
-    participation = await event_participation_crud.get_participation_by_id(db, participation_id)
-    if not participation:
-        raise HTTPException(status_code=404, detail="Participation not found")
-
-    if participation.user_id != current_user.id and current_user.role.value not in ['staff', 'organizer']:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    return participation
+# --- NOTE: get_participation moved to bottom to prevent route conflict ---
 
 
 @router.post("/check-in", response_model=EventParticipationRead)
@@ -1118,3 +1105,22 @@ async def get_pending_proofs_all_events(
         "total_pending": len(pending),
         "pending_proofs": pending
     }
+
+# ==========================================
+# MOVED GENERIC GETTER TO BOTTOM
+# ==========================================
+
+@router.get("/{participation_id}", response_model=EventParticipationRead)
+async def get_participation(
+        participation_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    participation = await event_participation_crud.get_participation_by_id(db, participation_id)
+    if not participation:
+        raise HTTPException(status_code=404, detail="Participation not found")
+
+    if participation.user_id != current_user.id and current_user.role.value not in ['staff', 'organizer']:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return participation
