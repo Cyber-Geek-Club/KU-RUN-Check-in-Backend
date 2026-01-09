@@ -278,6 +278,50 @@ async def get_my_active_codes(
     }
 
 
+@router.get("/{participation_id}/checkout-code")
+async def get_checkout_code(
+        participation_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    🔑 ได้รับ checkout code หลังจากส่งหลักฐาน (status = proof_submitted)
+    """
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            EventParticipation.id == participation_id,
+            EventParticipation.user_id == current_user.id
+        )
+    )
+    
+    participation = result.scalar_one_or_none()
+    
+    if not participation:
+        raise HTTPException(
+            status_code=404,
+            detail="Participation not found"
+        )
+    
+    # ✅ แสดง checkout code ก็ต่อเมื่อ status = proof_submitted
+    status_value = participation.status.value if hasattr(participation.status, 'value') else participation.status
+    
+    if status_value != ParticipationStatus.PROOF_SUBMITTED.value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot get checkout code. Current status: {status_value}. Submit proof first."
+        )
+    
+    return {
+        "participation_id": participation_id,
+        "event_id": participation.event_id,
+        "checkout_code": participation.join_code,
+        "status": status_value,
+        "proof_submitted_at": participation.proof_submitted_at,
+        "message": "✅ Checkout code is ready. Use this code to check out from the event."
+    }
+
+
 @router.post("/check-out", response_model=EventParticipationRead)
 async def check_out(
         check_out_data: EventParticipationCheckOut,
