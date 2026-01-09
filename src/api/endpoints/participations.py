@@ -304,19 +304,17 @@ async def get_checkout_code(
         )
     
     # ✅ แสดง checkout code ก็ต่อเมื่อ status = proof_submitted
-    status_value = participation.status.value if hasattr(participation.status, 'value') else participation.status
-    
-    if status_value != ParticipationStatus.PROOF_SUBMITTED.value:
+    if participation.status != ParticipationStatus.PROOF_SUBMITTED:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot get checkout code. Current status: {status_value}. Submit proof first."
+            detail=f"Cannot get checkout code. Current status: {participation.status.value}. Submit proof first."
         )
     
     return {
         "participation_id": participation_id,
         "event_id": participation.event_id,
         "checkout_code": participation.join_code,
-        "status": status_value,
+        "status": participation.status.value,
         "proof_submitted_at": participation.proof_submitted_at,
         "message": "✅ Checkout code is ready. Use this code to check out from the event."
     }
@@ -1168,3 +1166,4 @@ async def get_participation(
         raise HTTPException(status_code=403, detail="Access denied")
 
     return participation
+
