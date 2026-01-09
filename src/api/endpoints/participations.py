@@ -1165,4 +1165,3 @@ async def get_participation(
         raise HTTPException(status_code=403, detail="Access denied")
 
     return participation
-
