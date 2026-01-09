@@ -854,7 +854,7 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
     if not participation:
         return None
 
-    if participation.status != ParticipationStatus.CHECKED_IN:
+    if participation.status != ParticipationStatus.PROOF_SUBMITTED:
         return None
 
     # Check-out
