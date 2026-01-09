@@ -1050,7 +1050,6 @@ async def get_event_proofs(
         # Safe value extraction
         def get_val(obj):
             return obj.value if hasattr(obj, 'value') else obj
-
         proofs.append({
             "participation_id": participation.id,
             "join_code": participation.join_code,
