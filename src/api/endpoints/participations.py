@@ -304,17 +304,20 @@ async def get_checkout_code(
         )
     
     # ✅ แสดง checkout code ก็ต่อเมื่อ status = proof_submitted
+    # Note: Comparison is safe here, but attribute access below needs safety check
     if participation.status != ParticipationStatus.PROOF_SUBMITTED:
+        status_val = participation.status.value if hasattr(participation.status, 'value') else participation.status
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot get checkout code. Current status: {participation.status.value}. Submit proof first."
+            detail=f"Cannot get checkout code. Current status: {status_val}. Submit proof first."
         )
     
     return {
         "participation_id": participation_id,
         "event_id": participation.event_id,
         "checkout_code": participation.join_code,
-        "status": participation.status.value,
+        # ✅ FIXED: Safe access for status value
+        "status": participation.status.value if hasattr(participation.status, 'value') else participation.status,
         "proof_submitted_at": participation.proof_submitted_at,
         "message": "✅ Checkout code is ready. Use this code to check out from the event."
     }
