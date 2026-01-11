@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from src.database.db_config import init_db
 from fastapi.staticfiles import StaticFiles
-from src.api.endpoints import events, participations, rewards, users, images, notifications
+from src.api.endpoints import events, participations, rewards, users, images, notifications,reward_lb_endpoints
 
 app = FastAPI(
     title="KU RUN Check-in API",
@@ -45,5 +45,10 @@ app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 
+app.include_router(
+    reward_lb_endpoints.router, 
+    prefix="/api/reward-leaderboards", 
+    tags=["Reward Leaderboards"]
+)
 # Mount static files
 app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")

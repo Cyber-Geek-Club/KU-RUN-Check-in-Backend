@@ -3,7 +3,8 @@ from src.crud import (
     event_crud,
     event_participation_crud,
     reward_crud,
-    notification_crud
+    notification_crud,
+    reward_leaderboard_crud  # 🆕 เพิ่มบรรทัดนี้
 )
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "event_crud",
     "event_participation_crud",
     "reward_crud",
-    "notification_crud"
+    "notification_crud",
+    "reward_leaderboard_crud",  # 🆕 เพิ่มบรรทัดนี้
 ]
