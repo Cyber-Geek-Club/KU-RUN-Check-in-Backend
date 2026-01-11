@@ -4,7 +4,7 @@ from . import (
     event_participation_crud,
     reward_crud,
     notification_crud,
-    reward_leaderboard_crud
+    reward_lb_crud
 )
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "event_participation_crud",
     "reward_crud",
     "notification_crud",
-    "reward_leaderboard_crud",
+    "reward_lb_crud",
 ]
