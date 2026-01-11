@@ -43,10 +43,16 @@ class RewardLeaderboardConfig(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
-    event = relationship("Event", back_populates="leaderboard_config")
+    event = relationship(
+        "Event", 
+        back_populates="leaderboard_config"  # ✅ Make sure this matches
+    )
     created_by_user = relationship("User", foreign_keys=[created_by])
-    leaderboard_entries = relationship("RewardLeaderboardEntry", back_populates="config", cascade="all, delete-orphan")
-
+    leaderboard_entries = relationship(
+        "RewardLeaderboardEntry", 
+        back_populates="config", 
+        cascade="all, delete-orphan"
+    )
 
 class RewardLeaderboardEntry(Base):
     """ตารางรายการจัดอันดับของผู้เข้าร่วม - เก็บสถานะอันดับและรางวัลของแต่ละคน"""

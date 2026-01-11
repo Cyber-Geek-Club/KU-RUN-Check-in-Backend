@@ -13,7 +13,6 @@ from src.api.endpoints import (
 )
 # 🆕 Import reward_lb_endpoints แทน reward_leaderboards
 from src.api.endpoints import reward_lb_endpoints
-
 app = FastAPI(
     title="KU RUN Check-in API",
     description="API for KU Running Event Check-in System",

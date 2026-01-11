@@ -9,8 +9,8 @@ from src.models.base import Base
 
 class EventType(str, enum.Enum):
     """ประเภทของกิจกรรม"""
-    SINGLE_DAY = "single_day"  # กิจกรรมแบบวันเดียว (เดิม)
-    MULTI_DAY = "multi_day"  # กิจกรรมหลายวัน (ใหม่)
+    SINGLE_DAY = "single_day"
+    MULTI_DAY = "multi_day"
 
 
 class Event(Base):
@@ -20,7 +20,7 @@ class Event(Base):
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
 
-    # 🆕 Event type
+    # Event type
     event_type = Column(
         SQLEnum(EventType),
         default=EventType.SINGLE_DAY,
@@ -28,15 +28,15 @@ class Event(Base):
     )
 
     # Event details
-    event_date = Column(DateTime(timezone=True), nullable=False)  # วันเริ่มต้น
-    event_end_date = Column(DateTime(timezone=True), nullable=True)  # วันสิ้นสุด (สำหรับ multi-day)
+    event_date = Column(DateTime(timezone=True), nullable=False)
+    event_end_date = Column(DateTime(timezone=True), nullable=True)
     location = Column(String(500), nullable=True)
     distance_km = Column(Integer, nullable=True)
     max_participants = Column(Integer, nullable=True)
 
-    # 🆕 Multi-day settings
-    allow_daily_checkin = Column(Boolean, default=False)  # อนุญาตให้ check-in ทุกวันหรือไม่
-    max_checkins_per_user = Column(Integer, nullable=True)  # จำกัดจำนวนครั้งต่อคน (เช่น 30 วัน)
+    # Multi-day settings
+    allow_daily_checkin = Column(Boolean, default=False)
+    max_checkins_per_user = Column(Integer, nullable=True)
 
     # Event image/banner
     banner_image_url = Column(Text, nullable=True)
@@ -60,6 +60,14 @@ class Event(Base):
         back_populates="event",
         cascade="all, delete-orphan",
         passive_deletes=True
+    )
+    
+    # 🆕 ADD THIS RELATIONSHIP
+    leaderboard_config = relationship(
+        "RewardLeaderboardConfig",
+        back_populates="event",
+        uselist=False,  # One-to-one relationship
+        cascade="all, delete-orphan"
     )
 
     @property
