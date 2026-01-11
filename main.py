@@ -11,8 +11,8 @@ from src.api.endpoints import (
     images, 
     notifications
 )
-# 🆕 Import แยกเพื่อหลีกเลี่ยง circular import
-from src.api.endpoints import reward_leaderboards
+# 🆕 Import reward_lb_endpoints แทน reward_leaderboards
+from src.api.endpoints import reward_lb_endpoints
 
 app = FastAPI(
     title="KU RUN Check-in API",

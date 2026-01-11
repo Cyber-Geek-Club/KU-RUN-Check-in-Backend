@@ -1,6 +1,6 @@
 """
 Reward Leaderboard Schemas
-Save as: src/schemas/reward_leaderboard_schema.py
+Save as: src/schemas/reward_lb_schema.py
 """
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -62,9 +62,6 @@ class LeaderboardConfigBase(BaseModel):
             if tiers_sorted[i].max_rank >= tiers_sorted[i + 1].min_rank:
                 raise ValueError(f'Tier ranks overlap: Tier {tiers_sorted[i].tier} and {tiers_sorted[i + 1].tier}')
         
-        # Check total quantity doesn't exceed max_recipients
-        # (Will be validated in endpoint)
-        
         return v
     
     @field_validator('ends_at')
@@ -111,7 +108,7 @@ class LeaderboardConfigRead(LeaderboardConfigBase):
         model_config = ConfigDict(from_attributes=True)
     else:
         class Config:
-            orm_mode = True
+            from_attributes = True
 
 
 # ========== Leaderboard Entry Schemas ==========
@@ -148,7 +145,7 @@ class LeaderboardEntryRead(LeaderboardEntryBase):
         model_config = ConfigDict(from_attributes=True)
     else:
         class Config:
-            orm_mode = True
+            from_attributes = True
 
 
 class LeaderboardEntryWithDetails(LeaderboardEntryRead):

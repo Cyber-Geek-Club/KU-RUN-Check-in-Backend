@@ -1,6 +1,6 @@
 """
 Reward Leaderboard API Endpoints
-Save as: src/api/endpoints/reward_leaderboards.py
+Save as: src/api/endpoints/reward_lb_endpoints.py
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,8 +10,8 @@ from src.api.dependencies import (
     require_organizer,
     require_staff_or_organizer
 )
-from src.crud import reward_leaderboard_crud
-from src.schemas.reward_leaderboard_schema import (
+from src.crud import reward_lb_crud  # ✅ เปลี่ยนชื่อ
+from src.schemas.reward_lb_schema import (  # ✅ เปลี่ยนชื่อ
     LeaderboardConfigCreate,
     LeaderboardConfigUpdate,
     LeaderboardConfigRead,
@@ -63,7 +63,7 @@ async def create_leaderboard_config(
     - คนที่ 201 เป็นต้นไป = ไม่ได้รับรางวัล
     """
     # Check if event already has leaderboard
-    existing = await reward_leaderboard_crud.get_leaderboard_config_by_event(db, config.event_id)
+    existing = await reward_lb_crud.get_leaderboard_config_by_event(db, config.event_id)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -78,7 +78,7 @@ async def create_leaderboard_config(
             detail=f"Total reward slots ({total_slots}) exceeds max_reward_recipients ({config.max_reward_recipients})"
         )
     
-    return await reward_leaderboard_crud.create_leaderboard_config(db, config, current_user.id)
+    return await reward_lb_crud.create_leaderboard_config(db, config, current_user.id)
 
 
 @router.get("/configs", response_model=List[LeaderboardConfigRead])

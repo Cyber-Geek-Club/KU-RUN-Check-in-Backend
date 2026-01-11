@@ -1,6 +1,6 @@
 """
 Reward Leaderboard CRUD Operations
-Save as: src/crud/reward_leaderboard_crud.py
+Save as: src/crud/reward_lb_crud.py
 """
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from src.models.user import User
 from src.models.reward import Reward
 from src.models.event import Event
 from src.models.event_participation import EventParticipation, ParticipationStatus
-from src.schemas.reward_leaderboard_schema import (
+from src.schemas.reward_lb_schema import (  # ✅ เปลี่ยนชื่อ
     LeaderboardConfigCreate,
     LeaderboardConfigUpdate,
     RewardTier
