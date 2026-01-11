@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 import json
 
-from src.models.reward_leaderboard import RewardLeaderboardConfig, RewardLeaderboardEntry
+from src.models.reward_lb import RewardLeaderboardConfig, RewardLeaderboardEntry
 from src.models.user import User
 from src.models.reward import Reward
 from src.models.event import Event

@@ -201,7 +201,7 @@ async def main():
         print("=" * 70)
         print()
         print("💡 Next steps:")
-        print("   1. Update models (reward_leaderboard.py already created)")
+        print("   1. Update models (reward_lb.py already created)")
         print("   2. Create schemas (reward_leaderboard_schema.py)")
         print("   3. Create CRUD operations")
         print("   4. Create API endpoints")
