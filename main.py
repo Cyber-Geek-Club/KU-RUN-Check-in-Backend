@@ -11,30 +11,36 @@ from src.api.endpoints import (
     images, 
     notifications
 )
-# 🆕 Import reward_lb_endpoints แทน reward_leaderboards
 from src.api.endpoints import reward_lb_endpoints
+
 app = FastAPI(
     title="KU RUN Check-in API",
     description="API for KU Running Event Check-in System",
     version="1.0.0"
 )
 
-# Read allowed origins
-_allowed = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
-allowed_origins = [o.strip() for o in _allowed.split(",") if o.strip()]
+# 🔧 IMPROVED CORS Configuration
+# Read allowed origins from environment
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+
+print(f"✅ Allowed CORS origins: {allowed_origins}")  # Debug log
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,  # ✅ Specific origins instead of ["*"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],  # 🆕 Add this
 )
 
 # Initialize database connection
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    print("✅ Database initialized")
+    print(f"✅ CORS enabled for: {allowed_origins}")
 
 # Health check
 @app.get("/api")
@@ -52,11 +58,11 @@ app.include_router(participations.router, prefix="/api/participations", tags=["P
 app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
-
 app.include_router(
     reward_lb_endpoints.router, 
     prefix="/api/reward-leaderboards", 
     tags=["Reward Leaderboards"]
 )
+
 # Mount static files
 app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")
