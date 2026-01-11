@@ -1,6 +1,6 @@
 """
-Reward Leaderboard API Endpoints
-Save as: src/api/endpoints/reward_lb_endpoints.py
+Reward Leaderboard API Endpoints - CORRECTED VERSION
+Replace entire file: src/api/endpoints/reward_lb_endpoints.py
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from src.api.dependencies import (
     require_organizer,
     require_staff_or_organizer
 )
+# ✅ CORRECT IMPORT - matches the actual module name
 from src.crud import reward_lb_crud
 from src.schemas.reward_lb_schema import (
     LeaderboardConfigCreate,
@@ -18,10 +19,7 @@ from src.schemas.reward_lb_schema import (
     LeaderboardEntryRead,
     UserLeaderboardStatus,
     UserRewardSummary,
-    LeaderboardSummary,
-    LeaderboardFullView,
     FinalizeLeaderboardRequest,
-    RecalculateRanksRequest
 )
 from src.models.user import User
 from typing import List, Optional
@@ -30,23 +28,13 @@ from datetime import datetime, timezone
 router = APIRouter()
 
 
-# ========== Organizer Endpoints (Management) ==========
-
 @router.post("/configs", response_model=LeaderboardConfigRead, status_code=status.HTTP_201_CREATED)
 async def create_leaderboard_config(
     config: LeaderboardConfigCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Create Leaderboard Configuration (Organizer Only)**
-
-    กำหนดค่ารางวัลสำหรับกิจกรรม:
-    - กำหนดจำนวนครั้งที่ต้องวิ่ง (required_completions)
-    - กำหนดจำนวนคนสูงสุดที่ได้รับรางวัล (max_reward_recipients)
-    - กำหนดรางวัลแบ่งเป็นชั้น (reward_tiers)
-    """
-    # Check if event already has leaderboard
+    """Create Leaderboard Configuration (Organizer Only)"""
     existing = await reward_lb_crud.get_leaderboard_config_by_event(db, config.event_id)
     if existing:
         raise HTTPException(
@@ -54,7 +42,6 @@ async def create_leaderboard_config(
             detail=f"Event {config.event_id} already has a leaderboard configuration"
         )
 
-    # Validate total reward slots
     total_slots = sum(tier.quantity for tier in config.reward_tiers)
     if total_slots > config.max_reward_recipients:
         raise HTTPException(
@@ -73,9 +60,8 @@ async def get_all_leaderboard_configs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Get All Leaderboard Configurations (Organizer Only)**
-    """
+    """Get All Leaderboard Configurations (Organizer Only)"""
+    # ✅ FIXED: Using reward_lb_crud (not reward_leaderboard_crud)
     return await reward_lb_crud.get_all_leaderboard_configs(db, skip, limit, is_active)
 
 
@@ -85,18 +71,14 @@ async def get_leaderboard_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Get Leaderboard Configuration by ID (Organizer Only)**
-    """
+    """Get Leaderboard Configuration by ID (Organizer Only)"""
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard configuration not found"
         )
 
-    # Add computed fields
     stats = await reward_lb_crud.get_leaderboard_stats(db, config_id)
     config.total_reward_slots = stats.get("total_reward_slots", 0)
     config.total_qualified = stats.get("qualified_participants", 0)
@@ -112,18 +94,14 @@ async def get_leaderboard_config_by_event(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Get Leaderboard Configuration by Event ID**
-    """
+    """Get Leaderboard Configuration by Event ID"""
     config = await reward_lb_crud.get_leaderboard_config_by_event(db, event_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No leaderboard configuration found for event {event_id}"
         )
 
-    # Add computed fields
     stats = await reward_lb_crud.get_leaderboard_stats(db, config.id)
     config.total_reward_slots = stats.get("total_reward_slots", 0)
     config.total_qualified = stats.get("qualified_participants", 0)
@@ -140,20 +118,15 @@ async def update_leaderboard_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Update Leaderboard Configuration (Organizer Only)**
-    """
+    """Update Leaderboard Configuration (Organizer Only)"""
     try:
         config = await reward_lb_crud.update_leaderboard_config(db, config_id, updates)
-
         if not config:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Leaderboard configuration not found"
             )
-
         return config
-
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -167,20 +140,15 @@ async def delete_leaderboard_config(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Delete Leaderboard Configuration (Organizer Only)**
-    """
+    """Delete Leaderboard Configuration (Organizer Only)"""
     try:
         deleted = await reward_lb_crud.delete_leaderboard_config(db, config_id)
-
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Leaderboard configuration not found"
             )
-
         return None
-
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -197,20 +165,14 @@ async def get_leaderboard_entries(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Get All Entries for a Leaderboard (Organizer Only)**
-    """
+    """Get All Entries for a Leaderboard (Organizer Only)"""
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard configuration not found"
         )
-
-    return await reward_lb_crud.get_leaderboard_entries(
-        db, config_id, qualified_only, skip, limit
-    )
+    return await reward_lb_crud.get_leaderboard_entries(db, config_id, qualified_only, skip, limit)
 
 
 @router.get("/configs/{config_id}/stats")
@@ -219,17 +181,13 @@ async def get_leaderboard_statistics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Get Leaderboard Statistics (Organizer Only)**
-    """
+    """Get Leaderboard Statistics (Organizer Only)"""
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard configuration not found"
         )
-
     return await reward_lb_crud.get_leaderboard_stats(db, config_id)
 
 
@@ -239,19 +197,14 @@ async def calculate_rankings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Calculate Rankings (Organizer Only)**
-    """
+    """Calculate Rankings (Organizer Only)"""
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard configuration not found"
         )
-
     ranked_count = await reward_lb_crud.calculate_rankings(db, config_id)
-
     return {
         "success": True,
         "ranked_count": ranked_count,
@@ -266,9 +219,7 @@ async def finalize_leaderboard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """
-    **Finalize Leaderboard (Organizer Only)**
-    """
+    """Finalize Leaderboard (Organizer Only)"""
     if not request.confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -276,14 +227,12 @@ async def finalize_leaderboard(
         )
 
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard configuration not found"
         )
 
-    # Check if event has ended
     now = datetime.now(timezone.utc)
     if now < config.ends_at:
         raise HTTPException(
@@ -294,13 +243,11 @@ async def finalize_leaderboard(
     try:
         await reward_lb_crud.finalize_leaderboard(db, config_id)
         stats = await reward_lb_crud.get_leaderboard_stats(db, config_id)
-
         return {
             "success": True,
             "message": "Leaderboard finalized successfully",
             "statistics": stats
         }
-
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -308,35 +255,26 @@ async def finalize_leaderboard(
         )
 
 
-# ========== User Endpoints (Public/Student View) ==========
-
 @router.get("/my-leaderboards", response_model=UserRewardSummary)
 async def get_my_leaderboards(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Get My Leaderboard Status (Any User)**
-    """
+    """Get My Leaderboard Status (Any User)"""
     configs = await reward_lb_crud.get_all_leaderboard_configs(db, is_active=True)
-
     leaderboard_statuses = []
 
     for config in configs:
         entry = await reward_lb_crud.get_user_entry(db, config.id, current_user.id)
-
         if not entry:
-            # User hasn't participated yet
             continue
 
-        # Get event name
-        from src.crud import event_crud
+        from src.crud import event_crud, reward_crud
         event = await event_crud.get_event_by_id(db, config.event_id)
 
         progress_percentage = min(100, (entry.total_completions / config.required_completions) * 100)
         qualified = entry.qualified_at is not None
 
-        # Check if can still qualify
         now = datetime.now(timezone.utc)
         can_still_qualify = (
             not qualified and
@@ -344,10 +282,8 @@ async def get_my_leaderboards(
             config.finalized_at is None
         )
 
-        # Get reward name if rewarded
         reward_name = None
         if entry.reward_id:
-            from src.crud import reward_crud
             reward = await reward_crud.get_reward_by_id(db, entry.reward_id)
             if reward:
                 reward_name = reward.name
@@ -369,7 +305,6 @@ async def get_my_leaderboards(
             can_still_qualify=can_still_qualify
         ))
 
-    # Calculate summary
     total_leaderboards = len(leaderboard_statuses)
     completed_leaderboards = sum(1 for lb in leaderboard_statuses if lb.qualified)
     rewards_received = sum(1 for lb in leaderboard_statuses if lb.reward_name)
@@ -390,11 +325,8 @@ async def get_my_leaderboard_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Get My Status in Specific Leaderboard**
-    """
+    """Get My Status in Specific Leaderboard"""
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -402,15 +334,13 @@ async def get_my_leaderboard_status(
         )
 
     entry = await reward_lb_crud.get_user_entry(db, config_id, current_user.id)
-
     if not entry:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="You haven't participated in this leaderboard yet"
         )
 
-    # Get event name
-    from src.crud import event_crud
+    from src.crud import event_crud, reward_crud
     event = await event_crud.get_event_by_id(db, config.event_id)
 
     progress_percentage = min(100, (entry.total_completions / config.required_completions) * 100)
@@ -423,10 +353,8 @@ async def get_my_leaderboard_status(
         config.finalized_at is None
     )
 
-    # Get reward name
     reward_name = None
     if entry.reward_id:
-        from src.crud import reward_crud
         reward = await reward_crud.get_reward_by_id(db, entry.reward_id)
         if reward:
             reward_name = reward.name
@@ -456,18 +384,14 @@ async def get_public_leaderboard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Get Public Leaderboard Rankings (All Users)**
-    """
+    """Get Public Leaderboard Rankings (All Users)"""
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard not found"
         )
 
-    # Only show if finalized
     if not config.finalized_at:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
