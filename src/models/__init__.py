@@ -1,3 +1,4 @@
+import src.models.reward_lb
 from src.models.base import Base
 from src.models.user import User, UserRole
 from src.models.event import Event
