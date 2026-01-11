@@ -76,6 +76,7 @@ async def get_all_leaderboard_configs(
     """
     **Get All Leaderboard Configurations (Organizer Only)**
     """
+    # ✅ Fixed: using reward_lb_crud
     return await reward_lb_crud.get_all_leaderboard_configs(db, skip, limit, is_active)
 
 
@@ -88,6 +89,7 @@ async def get_leaderboard_config(
     """
     **Get Leaderboard Configuration by ID (Organizer Only)**
     """
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -97,6 +99,7 @@ async def get_leaderboard_config(
         )
 
     # Add computed fields
+    # ✅ Fixed: using reward_lb_crud
     stats = await reward_lb_crud.get_leaderboard_stats(db, config_id)
     config.total_reward_slots = stats.get("total_reward_slots", 0)
     config.total_qualified = stats.get("qualified_participants", 0)
@@ -115,7 +118,7 @@ async def get_leaderboard_config_by_event(
     """
     **Get Leaderboard Configuration by Event ID**
     """
-    # Fixed typo here: changed reward_leaderboard_crud to reward_lb_crud
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_event(db, event_id)
 
     if not config:
@@ -125,6 +128,7 @@ async def get_leaderboard_config_by_event(
         )
 
     # Add computed fields
+    # ✅ Fixed: using reward_lb_crud
     stats = await reward_lb_crud.get_leaderboard_stats(db, config.id)
     config.total_reward_slots = stats.get("total_reward_slots", 0)
     config.total_qualified = stats.get("qualified_participants", 0)
@@ -145,6 +149,7 @@ async def update_leaderboard_config(
     **Update Leaderboard Configuration (Organizer Only)**
     """
     try:
+        # ✅ Fixed: using reward_lb_crud
         config = await reward_lb_crud.update_leaderboard_config(db, config_id, updates)
 
         if not config:
@@ -172,6 +177,7 @@ async def delete_leaderboard_config(
     **Delete Leaderboard Configuration (Organizer Only)**
     """
     try:
+        # ✅ Fixed: using reward_lb_crud
         deleted = await reward_lb_crud.delete_leaderboard_config(db, config_id)
 
         if not deleted:
@@ -201,6 +207,7 @@ async def get_leaderboard_entries(
     """
     **Get All Entries for a Leaderboard (Organizer Only)**
     """
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -209,6 +216,7 @@ async def get_leaderboard_entries(
             detail="Leaderboard configuration not found"
         )
 
+    # ✅ Fixed: using reward_lb_crud
     return await reward_lb_crud.get_leaderboard_entries(
         db, config_id, qualified_only, skip, limit
     )
@@ -223,6 +231,7 @@ async def get_leaderboard_statistics(
     """
     **Get Leaderboard Statistics (Organizer Only)**
     """
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -231,6 +240,7 @@ async def get_leaderboard_statistics(
             detail="Leaderboard configuration not found"
         )
 
+    # ✅ Fixed: using reward_lb_crud
     return await reward_lb_crud.get_leaderboard_stats(db, config_id)
 
 
@@ -243,6 +253,7 @@ async def calculate_rankings(
     """
     **Calculate Rankings (Organizer Only)**
     """
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -251,6 +262,7 @@ async def calculate_rankings(
             detail="Leaderboard configuration not found"
         )
 
+    # ✅ Fixed: using reward_lb_crud
     ranked_count = await reward_lb_crud.calculate_rankings(db, config_id)
 
     return {
@@ -276,6 +288,7 @@ async def finalize_leaderboard(
             detail="Must confirm finalization by setting confirm=true"
         )
 
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -293,6 +306,7 @@ async def finalize_leaderboard(
         )
 
     try:
+        # ✅ Fixed: using reward_lb_crud
         await reward_lb_crud.finalize_leaderboard(db, config_id)
         stats = await reward_lb_crud.get_leaderboard_stats(db, config_id)
 
@@ -319,13 +333,13 @@ async def get_my_leaderboards(
     """
     **Get My Leaderboard Status (Any User)**
     """
-    # Get all active configs
+    # ✅ Fixed: using reward_lb_crud
     configs = await reward_lb_crud.get_all_leaderboard_configs(db, is_active=True)
 
     leaderboard_statuses = []
 
     for config in configs:
-        # Get user's entry
+        # ✅ Fixed: using reward_lb_crud
         entry = await reward_lb_crud.get_user_entry(db, config.id, current_user.id)
 
         if not entry:
@@ -396,6 +410,7 @@ async def get_my_leaderboard_status(
     """
     **Get My Status in Specific Leaderboard**
     """
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -404,7 +419,7 @@ async def get_my_leaderboard_status(
             detail="Leaderboard not found"
         )
 
-    # Get user's entry
+    # ✅ Fixed: using reward_lb_crud
     entry = await reward_lb_crud.get_user_entry(db, config_id, current_user.id)
 
     if not entry:
@@ -463,6 +478,7 @@ async def get_public_leaderboard(
     """
     **Get Public Leaderboard Rankings (All Users)**
     """
+    # ✅ Fixed: using reward_lb_crud
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
 
     if not config:
@@ -478,7 +494,7 @@ async def get_public_leaderboard(
             detail="Leaderboard is not finalized yet. Rankings are not public."
         )
 
-    # Get top entries
+    # ✅ Fixed: using reward_lb_crud
     return await reward_lb_crud.get_leaderboard_entries(
         db, config_id, qualified_only=True, skip=0, limit=limit
     )
