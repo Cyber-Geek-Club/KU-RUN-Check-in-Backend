@@ -15,7 +15,7 @@ from src.models.user import User
 from src.models.reward import Reward
 from src.models.event import Event
 from src.models.event_participation import EventParticipation, ParticipationStatus
-from src.schemas.reward_lb_schema import (  # ✅ เปลี่ยนชื่อ
+from src.schemas.reward_lb_schema import (
     LeaderboardConfigCreate,
     LeaderboardConfigUpdate,
     RewardTier
