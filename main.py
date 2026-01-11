@@ -3,7 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from src.database.db_config import init_db
 from fastapi.staticfiles import StaticFiles
-from src.api.endpoints import events, participations, rewards, users, images, notifications,reward_lb_endpoints
+from src.api.endpoints import (
+    events, 
+    participations, 
+    rewards, 
+    users, 
+    images, 
+    notifications
+)
+# 🆕 Import แยกเพื่อหลีกเลี่ยง circular import
+from src.api.endpoints import reward_leaderboards
 
 app = FastAPI(
     title="KU RUN Check-in API",
