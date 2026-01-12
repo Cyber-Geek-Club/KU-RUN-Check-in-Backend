@@ -1,3 +1,4 @@
+
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -277,7 +278,7 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
     if approved:
         completion_code = generate_completion_code()
         participation.completion_code = completion_code
-        participation.status = ParticipationStatus.COMPLETED
+        participation.status = ParticipationStatus.CHECKED_OUT
         participation.completed_by = staff_id
         participation.completed_at = datetime.now(timezone.utc)
 
