@@ -855,11 +855,11 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
     if not participation:
         return None
 
-    if participation.status != ParticipationStatus.PROOF_SUBMITTED:
+    if participation.status != ParticipationStatus.CHECKED_OUT:
         return None
 
     # Check-out
-    participation.status = ParticipationStatus.CHECKED_OUT
+    participation.status = ParticipationStatus.COMPLETED
     participation.checked_out_by = staff_id
     participation.checked_out_at = datetime.now(timezone.utc)
 
