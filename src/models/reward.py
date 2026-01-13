@@ -42,6 +42,7 @@ class UserReward(Base):
     earned_month = Column(Integer, nullable=False)  # 1-12
     earned_year = Column(Integer, nullable=False)
     
+    
     # Relationships
     user = relationship("User", back_populates="user_rewards")
     reward = relationship("Reward", back_populates="user_rewards")
