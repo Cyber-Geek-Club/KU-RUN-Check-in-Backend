@@ -173,7 +173,7 @@ async def get_event_by_id(
 async def create_event(db: AsyncSession, event: EventCreate, created_by: int) -> Event:
     """สร้างงานใหม่"""
     db_event = Event(
-        **event.dict(),
+        **event.model_dump(),
         created_by=created_by
     )
     db.add(db_event)
@@ -196,7 +196,7 @@ async def update_event(db: AsyncSession, event_id: int, event_data: EventUpdate)
     if not event:
         return None
 
-    for key, value in event_data.dict(exclude_unset=True).items():
+    for key, value in event_data.model_dump(exclude_unset=True).items():
         setattr(event, key, value)
 
     await db.commit()

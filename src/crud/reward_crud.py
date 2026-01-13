@@ -20,7 +20,7 @@ async def get_reward_by_id(db: AsyncSession, reward_id: int) -> Optional[Reward]
 
 
 async def create_reward(db: AsyncSession, reward: RewardCreate) -> Reward:
-    db_reward = Reward(**reward.dict())
+    db_reward = Reward(**reward.model_dump())
     db.add(db_reward)
     await db.commit()
     await db.refresh(db_reward)
@@ -33,7 +33,7 @@ async def update_reward(db: AsyncSession, reward_id: int, reward_data: RewardUpd
     if not reward:
         return None
 
-    for key, value in reward_data.dict(exclude_unset=True).items():
+    for key, value in reward_data.model_dump(exclude_unset=True).items():
         setattr(reward, key, value)
 
     await db.commit()

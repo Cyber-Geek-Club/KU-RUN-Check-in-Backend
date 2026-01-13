@@ -6,7 +6,7 @@ from src.models.event_participation import EventParticipation, ParticipationStat
 from src.models.event import Event
 from src.schemas.event_participation_schema import EventParticipationCreate
 from src.crud import notification_crud
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional, Dict
 from decimal import Decimal
 import random

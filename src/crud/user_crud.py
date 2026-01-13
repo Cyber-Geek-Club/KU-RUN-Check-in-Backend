@@ -223,7 +223,7 @@ async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> 
     if not user:
         return None
 
-    for key, value in user_data.dict(exclude_unset=True).items():
+    for key, value in user_data.model_dump(exclude_unset=True).items():
         setattr(user, key, value)
 
     await db.commit()
