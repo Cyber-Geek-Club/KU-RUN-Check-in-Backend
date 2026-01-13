@@ -1,4 +1,3 @@
-
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -604,7 +603,7 @@ async def check_daily_registration_limit(
         .where(
             EventParticipation.user_id == user_id,
             EventParticipation.event_id == event_id,
-            EventParticipation.checkin_date == today,
+            EventParticipation.checkin_date == today,  # 🔑 เช็ควันนี้
             EventParticipation.status != ParticipationStatus.CANCELLED
         )
     )
@@ -613,9 +612,7 @@ async def check_daily_registration_limit(
     if existing_today:
         return {
             "can_register": False,
-            "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (รหัส: {existing_today.join_code})",
-            "today_registration": existing_today,
-            "total_checkins": 0
+            "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (รหัส: {existing_today.join_code})"
         }
 
     # 2. ตรวจสอบจำนวนครั้งทั้งหมด
