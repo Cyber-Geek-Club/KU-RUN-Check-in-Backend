@@ -185,6 +185,57 @@ class UserRewardSummary(BaseModel):
     leaderboards: List[UserLeaderboardStatus]
 
 
+# ========== User Event Status Tracking ==========
+
+class UserEventStatusDetail(BaseModel):
+    """Detailed status of a user in an event"""
+    user_id: int
+    user_full_name: str
+    user_email: str
+    event_id: int
+    event_name: str
+    
+    # Participation stats
+    total_participations: int = 0
+    completed_participations: int = 0
+    checked_in_count: int = 0
+    proof_submitted_count: int = 0
+    rejected_count: int = 0
+    cancelled_count: int = 0
+    
+    # Progress tracking
+    total_distance_km: Optional[float] = None
+    first_participation_at: Optional[datetime] = None
+    last_participation_at: Optional[datetime] = None
+    
+    # Leaderboard status (if applicable)
+    leaderboard_config_id: Optional[int] = None
+    leaderboard_rank: Optional[int] = None
+    leaderboard_qualified: bool = False
+    leaderboard_reward_name: Optional[str] = None
+    
+    # Tier progress (for multi-tier events)
+    tier_progress: Optional[List[Dict[str, Any]]] = None
+
+
+class UserEventStatusList(BaseModel):
+    """List of user event statuses"""
+    total_users: int
+    event_id: int
+    event_name: str
+    users: List[UserEventStatusDetail]
+
+
+class EventUsersSummary(BaseModel):
+    """Summary of all users in an event"""
+    event_id: int
+    event_name: str
+    total_participants: int
+    by_status: Dict[str, int]
+    by_tier: Optional[Dict[str, int]] = None
+    completion_rate: float
+
+
 # ========== Organizer View ==========
 
 class LeaderboardSummary(BaseModel):
