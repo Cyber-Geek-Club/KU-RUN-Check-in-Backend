@@ -22,6 +22,7 @@ class RewardTier(BaseModel):
     reward_id: int = Field(..., description="Reward ID to give")
     reward_name: Optional[str] = Field(None, description="Reward name (for display)")
     quantity: int = Field(..., ge=1, description="Number of rewards available")
+    required_completions: Optional[int] = Field(None, ge=1, description="Required completions for this tier (overrides config default)")
     
     @field_validator('max_rank')
     @classmethod

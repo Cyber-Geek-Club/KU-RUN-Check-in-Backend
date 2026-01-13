@@ -221,8 +221,16 @@ async def update_entry_progress(
     entry.total_completions = len(completions)
     entry.completed_event_participations = [p.id for p in completions]
     
-    # Check if qualified (reached required completions)
-    if entry.total_completions >= config.required_completions and not entry.qualified_at:
+    # Check if qualified for ANY tier
+    # Get the minimum required_completions from all tiers (or config default)
+    reward_tiers = [RewardTier(**tier) for tier in config.reward_tiers]
+    min_required = config.required_completions  # default
+    for tier in reward_tiers:
+        tier_required = tier.required_completions if tier.required_completions else config.required_completions
+        min_required = min(min_required, tier_required)
+    
+    # Check if qualified (reached minimum required completions for any tier)
+    if entry.total_completions >= min_required and not entry.qualified_at:
         entry.qualified_at = datetime.now(timezone.utc)
     
     entry.updated_at = datetime.now(timezone.utc)
@@ -351,6 +359,14 @@ async def assign_rewards(
         matching_tier = None
         for tier in reward_tiers:
             if tier.min_rank <= entry.rank <= tier.max_rank:
+                # Get tier-specific required completions (or use config default)
+                tier_required = tier.required_completions if tier.required_completions else config.required_completions
+                
+                # Check if user has enough completions for this tier
+                if entry.total_completions < tier_required:
+                    skipped += 1
+                    continue
+                
                 # Check if tier still has rewards available
                 if tier_counts[tier.tier] < tier.quantity:
                     matching_tier = tier
