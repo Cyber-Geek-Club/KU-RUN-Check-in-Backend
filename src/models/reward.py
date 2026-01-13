@@ -20,7 +20,8 @@ class Reward(Base):
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user_rewards = relationship("UserReward", back_populates="reward")
@@ -35,7 +36,7 @@ class UserReward(Base):
     reward_id = Column(Integer, ForeignKey("rewards.id"), nullable=False)
     
     # When the reward was earned
-    earned_at = Column(DateTime, default=datetime.utcnow)
+    earned_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # For monthly tracking
     earned_month = Column(Integer, nullable=False)  # 1-12
