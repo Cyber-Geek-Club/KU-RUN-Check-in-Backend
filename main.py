@@ -10,7 +10,8 @@ from src.api.endpoints import (
     users, 
     images, 
     notifications,
-    event_holidays
+    event_holidays,
+    strava
 )
 from src.api.endpoints import reward_lb_endpoints
 
@@ -65,6 +66,7 @@ app.include_router(
     prefix="/api/reward-leaderboards", 
     tags=["Reward Leaderboards"]
 )
+app.include_router(strava.router, prefix="/api/strava", tags=["Strava"])
 
 # Mount static files
 app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")
