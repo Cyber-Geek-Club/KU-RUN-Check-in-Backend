@@ -77,7 +77,7 @@ async def migrate_participant_snapshots():
                     joined_at TIMESTAMP WITH TIME ZONE,
                     checked_in_at TIMESTAMP WITH TIME ZONE,
                     completed_at TIMESTAMP WITH TIME ZONE,
-                    metadata JSONB,
+                    entry_metadata JSONB,
                     
                     CONSTRAINT fk_entry_snapshot FOREIGN KEY (snapshot_id) 
                         REFERENCES participant_snapshots(id) ON DELETE CASCADE

@@ -83,7 +83,7 @@ async def create_snapshot(
             joined_at=p.joined_at,
             checked_in_at=p.checked_in_at,
             completed_at=p.completed_at,
-            metadata=metadata
+            entry_metadata=metadata
         )
         
         db.add(entry)
@@ -217,7 +217,7 @@ async def get_snapshot_entries(
             joined_at=e.joined_at,
             checked_in_at=e.checked_in_at,
             completed_at=e.completed_at,
-            metadata=e.metadata
+            metadata=e.entry_metadata
         )
         for e in entries
     ]

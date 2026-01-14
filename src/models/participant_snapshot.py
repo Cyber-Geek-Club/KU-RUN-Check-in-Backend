@@ -67,7 +67,7 @@ class ParticipantSnapshotEntry(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Additional metadata (JSON)
-    metadata = Column(JSON, nullable=True)  # เก็บข้อมูลเพิ่มเติม เช่น join_code, proof_image_url, etc.
+    entry_metadata = Column(JSON, nullable=True)  # เก็บข้อมูลเพิ่มเติม เช่น join_code, proof_image_url, etc.
     
     # Relationships
     snapshot = relationship("ParticipantSnapshot", back_populates="entries")
