@@ -9,7 +9,8 @@ from src.api.endpoints import (
     rewards, 
     users, 
     images, 
-    notifications
+    notifications,
+    event_holidays
 )
 from src.api.endpoints import reward_lb_endpoints
 
@@ -54,6 +55,7 @@ async def health_check():
 # Include routers
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(events.router, prefix="/api/events", tags=["Events"])
+app.include_router(event_holidays.router, prefix="/api", tags=["Event Holidays"])
 app.include_router(participations.router, prefix="/api/participations", tags=["Participations"])
 app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])

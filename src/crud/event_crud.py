@@ -2,11 +2,14 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
+from datetime import date, timedelta
+from typing import Optional, Dict, List
+
 from src.models.event import Event
 from src.models.event_participation import EventParticipation, ParticipationStatus
+from src.models.event_holiday import EventHoliday
 from src.models.user import User
 from src.schemas.event_schema import EventCreate, EventUpdate, ParticipantStats, ParticipantInfo, LeaderboardEntry
-from typing import Optional, Dict, List
 
 
 def get_value_safe(obj, default=None):
@@ -291,3 +294,50 @@ async def check_event_capacity(db: AsyncSession, event_id: int) -> Dict[str, any
         "is_full": event.is_full,
         "can_join": not event.is_full and event.is_active and event.is_published
     }
+
+
+async def get_event_working_days(db: AsyncSession, event_id: int) -> List[date]:
+    """
+    ดึงรายการวันที่เปิดให้เข้าร่วมกิจกรรม (ไม่รวมวันหยุด)
+    สำหรับกิจกรรมหลายวัน
+    """
+    event = await get_event_by_id(db, event_id)
+    if not event or not event.is_multi_day:
+        return []
+    
+    start_date = event.event_date.date()
+    end_date = event.event_end_date.date() if event.event_end_date else start_date
+    
+    # ดึงวันหยุดทั้งหมด
+    holidays_result = await db.execute(
+        select(EventHoliday.holiday_date)
+        .where(EventHoliday.event_id == event_id)
+    )
+    holiday_dates = set(holidays_result.scalars().all())
+    
+    # สร้างรายการวันทำการ
+    working_days = []
+    current_date = start_date
+    while current_date <= end_date:
+        if current_date not in holiday_dates:
+            working_days.append(current_date)
+        current_date += timedelta(days=1)
+    
+    return working_days
+
+
+async def count_event_working_days(db: AsyncSession, event_id: int) -> int:
+    """นับจำนวนวันทำการของกิจกรรม (ไม่รวมวันหยุด)"""
+    working_days = await get_event_working_days(db, event_id)
+    return len(working_days)
+
+
+async def is_event_day_holiday(db: AsyncSession, event_id: int, check_date: date) -> bool:
+    """ตรวจสอบว่าวันที่กำหนดเป็นวันหยุดของกิจกรรมหรือไม่"""
+    result = await db.execute(
+        select(EventHoliday).where(
+            EventHoliday.event_id == event_id,
+            EventHoliday.holiday_date == check_date
+        )
+    )
+    return result.scalar_one_or_none() is not None
