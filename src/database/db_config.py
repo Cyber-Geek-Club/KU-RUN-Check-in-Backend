@@ -15,7 +15,7 @@ async def init_db():
         # Import all models to ensure they're registered
         from src.models import (
             Base, User, Event, EventParticipation, 
-            Reward, UserReward, PasswordResetLog
+            Reward, UserReward, PasswordResetLog, UploadedImage
         )
         await conn.run_sync(Base.metadata.create_all)
 

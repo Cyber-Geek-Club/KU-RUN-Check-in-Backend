@@ -6,6 +6,7 @@ from src.models.event_participation import EventParticipation, ParticipationStat
 from src.models.reward import Reward, UserReward
 from src.models.password_reset_log import PasswordResetLog
 from src.models.notification import Notification, NotificationType
+from src.models.uploaded_image import UploadedImage, ImageCategory
 
 __all__ = [
     "Base",
@@ -19,4 +20,6 @@ __all__ = [
     "PasswordResetLog",
     "Notification",
     "NotificationType",
+    "UploadedImage",
+    "ImageCategory",
 ]
