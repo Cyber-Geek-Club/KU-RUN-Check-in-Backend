@@ -1,19 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import logging
 from src.database.db_config import init_db
 from fastapi.staticfiles import StaticFiles
-from src.api.endpoints import (
-    events, 
-    participations, 
-    rewards, 
-    users, 
-    images, 
-    notifications,
-    event_holidays,
-    strava
-)
-from src.api.endpoints import reward_lb_endpoints
+from src.api.endpoints import events, participations, rewards, users, images, notifications
 
 app = FastAPI(
     title="KU RUN Check-in API",
@@ -40,9 +31,8 @@ app.add_middleware(
 # Initialize database connection
 @app.on_event("startup")
 async def on_startup():
+    logger.info("🚀 Starting KU RUN Check-in API...")
     await init_db()
-    print("✅ Database initialized")
-    print(f"✅ CORS enabled for: {allowed_origins}")
 
 # Health check
 @app.get("/api")

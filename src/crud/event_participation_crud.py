@@ -1,13 +1,18 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, extract, case
+from sqlalchemy import func, extract, case, and_
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.event import Event
 from src.schemas.event_participation_schema import EventParticipationCreate
 from src.crud import notification_crud
+<<<<<<< HEAD
 from datetime import datetime, timezone, date
 from typing import Optional, Dict
+=======
+from datetime import datetime, timezone, date, timedelta
+from typing import Optional, Dict, List
+>>>>>>> c9de43d (update auto schedule)
 from decimal import Decimal
 import random
 import string
@@ -922,3 +927,222 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
         )
 
     return participation
+
+
+# ========================================
+# 🆕 Pre-registration Functions
+# ========================================
+
+async def pre_register_for_multi_day_event(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int
+) -> dict:
+    """
+    📝 ลงทะเบียนล่วงหน้าสำหรับกิจกรรมแบบหลายวัน
+    ระบบจะสร้างรหัสอัตโนมัติทุกวันให้ผู้ใช้
+    
+    Returns:
+        dict: สถานะการลงทะเบียน
+    """
+    from src.models.event import Event, EventType
+    
+    # ตรวจสอบว่า event มีอยู่และเป็น multi-day
+    event_result = await db.execute(
+        select(Event).where(Event.id == event_id)
+    )
+    event = event_result.scalar_one_or_none()
+    
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ไม่พบกิจกรรมนี้"
+        )
+    
+    if event.event_type != EventType.MULTI_DAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="กิจกรรมนี้ไม่รองรับการลงทะเบียนล่วงหน้า"
+        )
+    
+    # ตรวจสอบว่าลงทะเบียนไว้แล้วหรือยัง
+    existing = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status != ParticipationStatus.CANCELLED
+            )
+        )
+        .limit(1)
+    )
+    
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="คุณได้ลงทะเบียนกิจกรรมนี้แล้ว"
+        )
+    
+    # สร้างรหัสสำหรับวันแรก (ถ้าเป็นวันนี้หรืออนาคต)
+    today = date.today()
+    event_start = event.event_date.date()
+    
+    # ถ้ากิจกรรมเริ่มวันนี้หรือในอนาคต ให้สร้างรหัสวันแรก
+    if event_start >= today:
+        first_day = max(event_start, today)
+        
+        join_code = generate_join_code()
+        while await get_participation_by_join_code(db, join_code):
+            join_code = generate_join_code()
+        
+        code_expires_at = datetime.combine(
+            first_day,
+            datetime.max.time()
+        ).replace(tzinfo=timezone.utc)
+        
+        new_participation = EventParticipation(
+            user_id=user_id,
+            event_id=event_id,
+            join_code=join_code,
+            status=ParticipationStatus.JOINED,
+            checkin_date=first_day,
+            code_used=False,
+            code_expires_at=code_expires_at
+        )
+        
+        db.add(new_participation)
+        await db.commit()
+        await db.refresh(new_participation)
+        
+        # แจ้งเตือน
+        await notification_crud.notify_event_joined(
+            db, user_id, event_id,
+            new_participation.id, event.title
+        )
+        
+        return {
+            "success": True,
+            "message": "ลงทะเบียนสำเร็จ! ระบบจะสร้างรหัสอัตโนมัติทุกวัน",
+            "first_code": join_code,
+            "first_date": first_day,
+            "event_end_date": event.event_end_date.date() if event.event_end_date else None
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="กิจกรรมนี้เริ่มไปแล้ว กรุณาลงทะเบียนรายวัน"
+        )
+
+
+async def get_user_pre_registration_status(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int
+) -> dict:
+    """
+    📊 ตรวจสอบสถานะการลงทะเบียนล่วงหน้า
+    
+    Returns:
+        dict: สถานะและข้อมูลการลงทะเบียน
+    """
+    # ตรวจสอบว่ามีการลงทะเบียนหรือไม่
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status != ParticipationStatus.CANCELLED
+            )
+        )
+        .order_by(EventParticipation.checkin_date.desc())
+    )
+    participations = result.scalars().all()
+    
+    if not participations:
+        return {
+            "is_registered": False,
+            "total_codes": 0,
+            "active_codes": 0,
+            "used_codes": 0,
+            "expired_codes": 0
+        }
+    
+    today = date.today()
+    active_codes = []
+    used_codes = 0
+    expired_codes = 0
+    
+    for p in participations:
+        if p.status == ParticipationStatus.JOINED and not p.code_used:
+            if p.checkin_date == today:
+                active_codes.append({
+                    "code": p.join_code,
+                    "date": p.checkin_date,
+                    "expires_at": p.code_expires_at
+                })
+        elif p.code_used or p.status in [ParticipationStatus.CHECKED_IN, ParticipationStatus.COMPLETED]:
+            used_codes += 1
+        elif p.status == ParticipationStatus.EXPIRED:
+            expired_codes += 1
+    
+    return {
+        "is_registered": True,
+        "total_codes": len(participations),
+        "active_codes": len(active_codes),
+        "used_codes": used_codes,
+        "expired_codes": expired_codes,
+        "today_code": active_codes[0] if active_codes else None
+    }
+
+
+async def cancel_pre_registration(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int,
+        reason: Optional[str] = None
+) -> dict:
+    """
+    ❌ ยกเลิกการลงทะเบียนล่วงหน้า (ยกเลิกรหัสที่ยังไม่ได้ใช้ทั้งหมด)
+    
+    Returns:
+        dict: ผลการยกเลิก
+    """
+    # หารหัสที่ยังไม่ได้ใช้
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status == ParticipationStatus.JOINED,
+                EventParticipation.code_used == False
+            )
+        )
+    )
+    unused_participations = result.scalars().all()
+    
+    if not unused_participations:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ไม่พบรหัสที่สามารถยกเลิกได้"
+        )
+    
+    now = datetime.now(timezone.utc)
+    cancelled_count = 0
+    
+    for p in unused_participations:
+        p.status = ParticipationStatus.CANCELLED
+        p.cancellation_reason = reason or "ยกเลิกโดยผู้ใช้"
+        p.cancelled_at = now
+        p.updated_at = now
+        cancelled_count += 1
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": f"ยกเลิกรหัสทั้งหมด {cancelled_count} รหัสแล้ว",
+        "cancelled_count": cancelled_count
+    }
