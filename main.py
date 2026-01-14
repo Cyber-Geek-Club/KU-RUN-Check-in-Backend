@@ -4,7 +4,25 @@ import os
 import logging
 from src.database.db_config import init_db
 from fastapi.staticfiles import StaticFiles
-from src.api.endpoints import events, participations, rewards, users, images, notifications
+from src.api.endpoints import (
+    events, 
+    participations, 
+    rewards, 
+    users, 
+    images, 
+    notifications,
+    event_holidays,
+    reward_lb_endpoints,
+    strava
+)
+from src.services.scheduler_service import start_scheduler, shutdown_scheduler
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="KU RUN Check-in API",
@@ -33,6 +51,18 @@ app.add_middleware(
 async def on_startup():
     logger.info("🚀 Starting KU RUN Check-in API...")
     await init_db()
+    logger.info("✅ Database initialized")
+    
+    # Start scheduler for auto-unlock/lock
+    start_scheduler()
+    logger.info("✅ Scheduler started")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    logger.info("🛑 Shutting down KU RUN Check-in API...")
+    shutdown_scheduler()
+    logger.info("✅ Scheduler stopped")
 
 # Health check
 @app.get("/api")
