@@ -979,55 +979,57 @@ async def pre_register_for_multi_day_event(
             detail="คุณได้ลงทะเบียนกิจกรรมนี้แล้ว"
         )
     
-    # สร้างรหัสสำหรับวันแรก (ถ้าเป็นวันนี้หรืออนาคต)
+    # สร้างรหัสสำหรับวันแรก
     today = date.today()
     event_start = event.event_date.date()
+    event_end = event.event_end_date.date() if event.event_end_date else event_start
     
-    # ถ้ากิจกรรมเริ่มวันนี้หรือในอนาคต ให้สร้างรหัสวันแรก
-    if event_start >= today:
-        first_day = max(event_start, today)
-        
-        join_code = generate_join_code()
-        while await get_participation_by_join_code(db, join_code):
-            join_code = generate_join_code()
-        
-        code_expires_at = datetime.combine(
-            first_day,
-            datetime.max.time()
-        ).replace(tzinfo=timezone.utc)
-        
-        new_participation = EventParticipation(
-            user_id=user_id,
-            event_id=event_id,
-            join_code=join_code,
-            status=ParticipationStatus.JOINED,
-            checkin_date=first_day,
-            code_used=False,
-            code_expires_at=code_expires_at
-        )
-        
-        db.add(new_participation)
-        await db.commit()
-        await db.refresh(new_participation)
-        
-        # แจ้งเตือน
-        await notification_crud.notify_event_joined(
-            db, user_id, event_id,
-            new_participation.id, event.title
-        )
-        
-        return {
-            "success": True,
-            "message": "ลงทะเบียนสำเร็จ! ระบบจะสร้างรหัสอัตโนมัติทุกวัน",
-            "first_code": join_code,
-            "first_date": first_day,
-            "event_end_date": event.event_end_date.date() if event.event_end_date else None
-        }
-    else:
+    # ตรวจสอบว่ากิจกรรมยังดำเนินการอยู่หรือไม่
+    if today > event_end:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="กิจกรรมนี้เริ่มไปแล้ว กรุณาลงทะเบียนรายวัน"
+            detail="กิจกรรมนี้จบไปแล้ว ไม่สามารถลงทะเบียนได้"
         )
+    
+    # กำหนดวันที่จะสร้างรหัส (วันนี้ ถ้ากิจกรรมเริ่มไปแล้ว หรือวันเริ่มกิจกรรม ถ้ายังไม่เริ่ม)
+    first_day = max(event_start, today)
+    
+    join_code = generate_join_code()
+    while await get_participation_by_join_code(db, join_code):
+        join_code = generate_join_code()
+    
+    code_expires_at = datetime.combine(
+        first_day,
+        datetime.max.time()
+    ).replace(tzinfo=timezone.utc)
+    
+    new_participation = EventParticipation(
+        user_id=user_id,
+        event_id=event_id,
+        join_code=join_code,
+        status=ParticipationStatus.JOINED,
+        checkin_date=first_day,
+        code_used=False,
+        code_expires_at=code_expires_at
+    )
+    
+    db.add(new_participation)
+    await db.commit()
+    await db.refresh(new_participation)
+    
+    # แจ้งเตือน
+    await notification_crud.notify_event_joined(
+        db, user_id, event_id,
+        new_participation.id, event.title
+    )
+    
+    return {
+        "success": True,
+        "message": "ลงทะเบียนสำเร็จ! ระบบจะสร้างรหัสอัตโนมัติทุกวัน",
+        "first_code": join_code,
+        "first_date": first_day,
+        "event_end_date": event_end
+    }
 
 
 async def get_user_pre_registration_status(
