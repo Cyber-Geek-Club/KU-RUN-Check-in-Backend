@@ -64,6 +64,57 @@ async def get_participation_by_join_code(db: AsyncSession, join_code: str) -> Op
 
 async def create_participation(db: AsyncSession, participation: EventParticipationCreate,
                                user_id: int) -> EventParticipation:
+    # Check if user already has an active participation
+    existing_query = await db.execute(
+        select(EventParticipation)
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.event_id == participation.event_id
+        )
+        .order_by(EventParticipation.joined_at.desc())
+    )
+    existing_participations = existing_query.scalars().all()
+    
+    # Check for active (non-cancelled) participation
+    for existing in existing_participations:
+        if existing.status != ParticipationStatus.CANCELLED:
+            raise HTTPException(
+                status_code=400,
+                detail="คุณได้สมัครกิจกรรมนี้แล้ว"
+            )
+    
+    # If user has a cancelled participation, reactivate it
+    if existing_participations:
+        cancelled_participation = existing_participations[0]  # Most recent
+        
+        # Generate new join code
+        join_code = generate_join_code()
+        while await get_participation_by_join_code(db, join_code):
+            join_code = generate_join_code()
+        
+        # Reset the participation
+        cancelled_participation.status = ParticipationStatus.JOINED
+        cancelled_participation.join_code = join_code
+        cancelled_participation.joined_at = datetime.now(timezone.utc)
+        cancelled_participation.cancellation_reason = None
+        cancelled_participation.cancelled_at = None
+        
+        await db.commit()
+        await db.refresh(cancelled_participation)
+        
+        # Get event details for notification
+        event = await db.execute(select(Event).where(Event.id == participation.event_id))
+        event_obj = event.scalar_one_or_none()
+        
+        # 🔔 Notify: Registered
+        if event_obj:
+            await notification_crud.notify_event_joined(
+                db, user_id, participation.event_id, cancelled_participation.id, event_obj.title
+            )
+        
+        return cancelled_participation
+    
+    # Create new participation if no existing record
     # Generate unique join code
     join_code = generate_join_code()
     while await get_participation_by_join_code(db, join_code):
