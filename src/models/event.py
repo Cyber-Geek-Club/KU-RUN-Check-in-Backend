@@ -65,21 +65,21 @@ class Event(Base):
         passive_deletes=True
     )
     
-    # 🆕 ADD THIS RELATIONSHIP
+    # Leaderboard relationship
     leaderboard_config = relationship(
         "RewardLeaderboardConfig",
-     
+        back_populates="event",
+        uselist=False,  # One-to-one relationship
+        cascade="all, delete-orphan"
+    )
     
-    # 🆕 Holidays relationship
+    # Holidays relationship
     holidays = relationship(
         "EventHoliday",
         back_populates="event",
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="EventHoliday.holiday_date"
-    )   back_populates="event",
-        uselist=False,  # One-to-one relationship
-        cascade="all, delete-orphan"
     )
 
     @property
