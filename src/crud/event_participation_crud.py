@@ -6,13 +6,8 @@ from src.models.event_participation import EventParticipation, ParticipationStat
 from src.models.event import Event
 from src.schemas.event_participation_schema import EventParticipationCreate
 from src.crud import notification_crud
-<<<<<<< HEAD
-from datetime import datetime, timezone, date
-from typing import Optional, Dict
-=======
 from datetime import datetime, timezone, date, timedelta
 from typing import Optional, Dict, List
->>>>>>> c9de43d (update auto schedule)
 from decimal import Decimal
 import random
 import string
