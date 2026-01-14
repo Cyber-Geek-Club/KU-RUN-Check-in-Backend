@@ -8,7 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
-from src.database.db_config import async_session
+from src.database.db_config import SessionLocal
 from src.models.event import Event, EventType
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.user import User
@@ -25,7 +25,7 @@ async def auto_unlock_daily_codes():
     """
     logger.info("🔓 Starting auto-unlock for multi-day events...")
     
-    async with async_session() as db:
+    async with SessionLocal() as db:
         try:
             today = date.today()
             
@@ -155,7 +155,7 @@ async def auto_expire_unused_codes():
     """
     logger.info("🔒 Starting auto-expire for unused codes...")
     
-    async with async_session() as db:
+    async with SessionLocal() as db:
         try:
             now = datetime.now(timezone.utc)
             
