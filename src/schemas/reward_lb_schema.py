@@ -1,5 +1,5 @@
 """
-Reward Leaderboard Schemas
+Reward Leaderboard Schemas - Updated for Dynamic Logic
 Save as: src/schemas/reward_lb_schema.py
 """
 from pydantic import BaseModel, Field, field_validator
@@ -17,19 +17,17 @@ except ImportError:
 class RewardTier(BaseModel):
     """Single reward tier configuration"""
     tier: int = Field(..., ge=1, description="Tier number (1, 2, 3...)")
-    min_rank: int = Field(..., ge=1, description="Minimum rank (1 = first place)")
-    max_rank: int = Field(..., ge=1, description="Maximum rank")
+
+    # ⚠️ Optional: Make min/max rank optional or just for reference
+    min_rank: int = Field(1, ge=1, description="Reference min rank (Not strictly enforced in dynamic logic)")
+    max_rank: int = Field(9999, ge=1, description="Reference max rank (Not strictly enforced in dynamic logic)")
+
     reward_id: int = Field(..., description="Reward ID to give")
     reward_name: Optional[str] = Field(None, description="Reward name (for display)")
     quantity: int = Field(..., ge=1, description="Number of rewards available")
-    required_completions: Optional[int] = Field(None, ge=1, description="Required completions for this tier (overrides config default)")
-    
-    @field_validator('max_rank')
-    @classmethod
-    def validate_max_rank(cls, v, info):
-        if 'min_rank' in info.data and v < info.data['min_rank']:
-            raise ValueError('max_rank must be >= min_rank')
-        return v
+    required_completions: Optional[int] = Field(None, ge=1, description="Required completions for this tier (CRITICAL for priority)")
+
+    # ✅ REMOVED: validate_max_rank (No longer needed)
 
 
 # ========== Leaderboard Config Schemas ==========
@@ -39,32 +37,29 @@ class LeaderboardConfigBase(BaseModel):
     event_id: int
     name: str = Field(..., max_length=255, description="Config name")
     description: Optional[str] = None
-    required_completions: int = Field(30, ge=1, le=365, description="Required runs (e.g., 30)")
-    max_reward_recipients: int = Field(200, ge=1, description="Max people who can receive rewards")
+    required_completions: int = Field(30, ge=1, le=365, description="Required runs (Base minimum)")
+    max_reward_recipients: int = Field(200, ge=1, description="GLOBAL INVENTORY (Max people who can receive rewards)")
     reward_tiers: List[RewardTier] = Field(..., min_length=1, description="Reward tier list")
     starts_at: datetime = Field(..., description="When leaderboard tracking starts")
     ends_at: datetime = Field(..., description="When leaderboard tracking ends")
-    
+
     @field_validator('reward_tiers')
     @classmethod
     def validate_reward_tiers(cls, v):
         if not v:
             raise ValueError('At least one reward tier is required')
-        
-        # Check tier numbers are sequential
+
+        # Check tier numbers are sequential (Optional, but good for UI)
         tier_numbers = sorted([t.tier for t in v])
-        expected = list(range(1, len(v) + 1))
-        if tier_numbers != expected:
-            raise ValueError(f'Tier numbers must be sequential: {expected}')
-        
-        # Check for rank overlaps
-        tiers_sorted = sorted(v, key=lambda x: x.min_rank)
-        for i in range(len(tiers_sorted) - 1):
-            if tiers_sorted[i].max_rank >= tiers_sorted[i + 1].min_rank:
-                raise ValueError(f'Tier ranks overlap: Tier {tiers_sorted[i].tier} and {tiers_sorted[i + 1].tier}')
-        
+        # expected = list(range(1, len(v) + 1))
+        # if tier_numbers != expected:
+        #     raise ValueError(f'Tier numbers must be sequential: {expected}')
+
+        # ✅ REMOVED: Rank Overlap Check
+        # Logic ใหม่ไม่สนใจ Rank Range แล้ว สนใจแค่ required_completions
+
         return v
-    
+
     @field_validator('ends_at')
     @classmethod
     def validate_dates(cls, v, info):
@@ -98,13 +93,13 @@ class LeaderboardConfigRead(LeaderboardConfigBase):
     created_by: int
     created_at: datetime
     updated_at: datetime
-    
+
     # Computed fields
     total_reward_slots: Optional[int] = Field(None, description="Total reward slots available")
     total_qualified: Optional[int] = Field(None, description="Number of people who qualified")
     total_rewarded: Optional[int] = Field(None, description="Number of people rewarded")
     is_finalized: Optional[bool] = Field(None, description="Is leaderboard finalized?")
-    
+
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
     else:
@@ -128,20 +123,20 @@ class LeaderboardEntryRead(LeaderboardEntryBase):
     rank: Optional[int] = None
     qualified_at: Optional[datetime] = None
     reward_id: Optional[int] = None
-    reward_tier: Optional[int] = None
+    reward_tier: Optional[str] = None # ✅ Changed to string (to support "WAITLIST" or tier names)
     rewarded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    
+
     # User info (joined)
     user_full_name: Optional[str] = None
     user_email: Optional[str] = None
     user_role: Optional[str] = None
-    
+
     # Reward info (joined)
     reward_name: Optional[str] = None
     reward_description: Optional[str] = None
-    
+
     if ConfigDict:
         model_config = ConfigDict(from_attributes=True)
     else:
@@ -169,7 +164,7 @@ class UserLeaderboardStatus(BaseModel):
     rank: Optional[int] = None
     qualified: bool
     qualified_at: Optional[datetime] = None
-    reward_tier: Optional[int] = None
+    reward_tier: Optional[str] = None # ✅ Changed to string
     reward_name: Optional[str] = None
     rewarded_at: Optional[datetime] = None
     is_finalized: bool
