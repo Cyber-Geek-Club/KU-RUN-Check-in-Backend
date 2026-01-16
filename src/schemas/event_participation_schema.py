@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, HttpUrl
-from datetime import datetime
+from datetime import datetime, date  # ✅ เพิ่ม import date
 from typing import Optional
 from decimal import Decimal
 from src.models.event_participation import ParticipationStatus
@@ -69,6 +69,10 @@ class EventParticipationRead(EventParticipationBase):
     completion_code: Optional[str] = None
     completion_rank: Optional[int] = None
     status: ParticipationStatus
+
+    # 🆕 Daily check-in fields (เพิ่มส่วนนี้)
+    checkin_date: Optional[date] = None
+    code_expires_at: Optional[datetime] = None
 
     # Proof
     proof_image_url: Optional[str] = None
