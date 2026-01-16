@@ -1,15 +1,10 @@
 """
-Reward Leaderboard Schemas - Updated for Dynamic Logic
+Reward Leaderboard Schemas
 Save as: src/schemas/reward_lb_schema.py
 """
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-
-try:
-    from pydantic import ConfigDict
-except ImportError:
-    ConfigDict = None
 
 
 # ========== Reward Tier Configuration ==========
@@ -17,17 +12,19 @@ except ImportError:
 class RewardTier(BaseModel):
     """Single reward tier configuration"""
     tier: int = Field(..., ge=1, description="Tier number (1, 2, 3...)")
-
-    # ⚠️ Optional: Make min/max rank optional or just for reference
-    min_rank: int = Field(1, ge=1, description="Reference min rank (Not strictly enforced in dynamic logic)")
-    max_rank: int = Field(9999, ge=1, description="Reference max rank (Not strictly enforced in dynamic logic)")
-
+    min_rank: int = Field(..., ge=1, description="Minimum rank (1 = first place)")
+    max_rank: int = Field(..., ge=1, description="Maximum rank")
     reward_id: int = Field(..., description="Reward ID to give")
     reward_name: Optional[str] = Field(None, description="Reward name (for display)")
     quantity: int = Field(..., ge=1, description="Number of rewards available")
-    required_completions: Optional[int] = Field(None, ge=1, description="Required completions for this tier (CRITICAL for priority)")
+    required_completions: Optional[int] = Field(None, ge=1, description="Required completions for this tier (overrides config default)")
 
-    # ✅ REMOVED: validate_max_rank (No longer needed)
+    @field_validator('max_rank')
+    @classmethod
+    def validate_max_rank(cls, v, info):
+        if 'min_rank' in info.data and v < info.data['min_rank']:
+            raise ValueError('max_rank must be >= min_rank')
+        return v
 
 
 # ========== Leaderboard Config Schemas ==========
@@ -37,8 +34,8 @@ class LeaderboardConfigBase(BaseModel):
     event_id: int
     name: str = Field(..., max_length=255, description="Config name")
     description: Optional[str] = None
-    required_completions: int = Field(30, ge=1, le=365, description="Required runs (Base minimum)")
-    max_reward_recipients: int = Field(200, ge=1, description="GLOBAL INVENTORY (Max people who can receive rewards)")
+    required_completions: int = Field(30, ge=1, le=365, description="Required runs (e.g., 30)")
+    max_reward_recipients: int = Field(200, ge=1, description="Max people who can receive rewards")
     reward_tiers: List[RewardTier] = Field(..., min_length=1, description="Reward tier list")
     starts_at: datetime = Field(..., description="When leaderboard tracking starts")
     ends_at: datetime = Field(..., description="When leaderboard tracking ends")
@@ -49,14 +46,17 @@ class LeaderboardConfigBase(BaseModel):
         if not v:
             raise ValueError('At least one reward tier is required')
 
-        # Check tier numbers are sequential (Optional, but good for UI)
+        # Check tier numbers are sequential
         tier_numbers = sorted([t.tier for t in v])
-        # expected = list(range(1, len(v) + 1))
-        # if tier_numbers != expected:
-        #     raise ValueError(f'Tier numbers must be sequential: {expected}')
+        expected = list(range(1, len(v) + 1))
+        if tier_numbers != expected:
+            raise ValueError(f'Tier numbers must be sequential: {expected}')
 
-        # ✅ REMOVED: Rank Overlap Check
-        # Logic ใหม่ไม่สนใจ Rank Range แล้ว สนใจแค่ required_completions
+        # Check for rank overlaps
+        tiers_sorted = sorted(v, key=lambda x: x.min_rank)
+        for i in range(len(tiers_sorted) - 1):
+            if tiers_sorted[i].max_rank >= tiers_sorted[i + 1].min_rank:
+                raise ValueError(f'Tier ranks overlap: Tier {tiers_sorted[i].tier} and {tiers_sorted[i + 1].tier}')
 
         return v
 
@@ -100,11 +100,7 @@ class LeaderboardConfigRead(LeaderboardConfigBase):
     total_rewarded: Optional[int] = Field(None, description="Number of people rewarded")
     is_finalized: Optional[bool] = Field(None, description="Is leaderboard finalized?")
 
-    if ConfigDict:
-        model_config = ConfigDict(from_attributes=True)
-    else:
-        class Config:
-            from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ========== Leaderboard Entry Schemas ==========
@@ -123,7 +119,7 @@ class LeaderboardEntryRead(LeaderboardEntryBase):
     rank: Optional[int] = None
     qualified_at: Optional[datetime] = None
     reward_id: Optional[int] = None
-    reward_tier: Optional[str] = None # ✅ Changed to string (to support "WAITLIST" or tier names)
+    reward_tier: Optional[int] = None
     rewarded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -137,11 +133,7 @@ class LeaderboardEntryRead(LeaderboardEntryBase):
     reward_name: Optional[str] = None
     reward_description: Optional[str] = None
 
-    if ConfigDict:
-        model_config = ConfigDict(from_attributes=True)
-    else:
-        class Config:
-            from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LeaderboardEntryWithDetails(LeaderboardEntryRead):
@@ -164,7 +156,7 @@ class UserLeaderboardStatus(BaseModel):
     rank: Optional[int] = None
     qualified: bool
     qualified_at: Optional[datetime] = None
-    reward_tier: Optional[str] = None # ✅ Changed to string
+    reward_tier: Optional[int] = None
     reward_name: Optional[str] = None
     rewarded_at: Optional[datetime] = None
     is_finalized: bool
@@ -189,7 +181,7 @@ class UserEventStatusDetail(BaseModel):
     user_email: str
     event_id: int
     event_name: str
-    
+
     # Participation stats
     total_participations: int = 0
     completed_participations: int = 0
@@ -197,18 +189,18 @@ class UserEventStatusDetail(BaseModel):
     proof_submitted_count: int = 0
     rejected_count: int = 0
     cancelled_count: int = 0
-    
+
     # Progress tracking
     total_distance_km: Optional[float] = None
     first_participation_at: Optional[datetime] = None
     last_participation_at: Optional[datetime] = None
-    
+
     # Leaderboard status (if applicable)
     leaderboard_config_id: Optional[int] = None
     leaderboard_rank: Optional[int] = None
     leaderboard_qualified: bool = False
     leaderboard_reward_name: Optional[str] = None
-    
+
     # Tier progress (for multi-tier events)
     tier_progress: Optional[List[Dict[str, Any]]] = None
 
