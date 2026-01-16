@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, case, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
+from src.crud import  reward_lb_crud
 from src.api.dependencies.auth import (
     get_db,
     get_current_user,
@@ -150,7 +150,19 @@ async def verify_completion(
         raise HTTPException(status_code=400, detail="Invalid participation")
 
     if verify_data.approved:
+        # 1. ตรวจสอบและแจก Reward ทั่วไป (Badge รายเดือน ฯลฯ)
         await reward_crud.check_and_award_rewards(db, participation.user_id)
+
+        # 2. ✅ FIX: อัปเดต Leaderboard ของกิจกรรมนั้น (ถ้ามี)
+        lb_config = await reward_lb_crud.get_leaderboard_config_by_event(db, participation.event_id)
+        if lb_config:
+            await reward_lb_crud.update_entry_progress(
+                db,
+                lb_config.id,
+                participation.user_id,
+                participation.event_id
+            )
+
     return participation
 
 

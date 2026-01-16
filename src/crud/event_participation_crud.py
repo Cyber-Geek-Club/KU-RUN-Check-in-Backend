@@ -1,18 +1,19 @@
+# src/crud/event_participation_crud.py
 
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, extract, case
+from sqlalchemy import func, extract, case, and_
 from src.models.event_participation import EventParticipation, ParticipationStatus
-from src.models.event import Event
+from src.models.event import Event, EventType  # Added EventType import
 from src.schemas.event_participation_schema import EventParticipationCreate
 from src.crud import notification_crud
-from datetime import datetime, timezone
-from typing import Optional, Dict
+from datetime import datetime, timezone, date, timedelta
+from typing import Optional, Dict, List
 from decimal import Decimal
 import random
 import string
-from fastapi import HTTPException, status  # Added missing import
+from fastapi import HTTPException, status
 
 from src.utils.image_hash import are_images_similar, get_hash_similarity_score
 
@@ -65,6 +66,57 @@ async def get_participation_by_join_code(db: AsyncSession, join_code: str) -> Op
 
 async def create_participation(db: AsyncSession, participation: EventParticipationCreate,
                                user_id: int) -> EventParticipation:
+    # Check if user already has an active participation
+    existing_query = await db.execute(
+        select(EventParticipation)
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.event_id == participation.event_id
+        )
+        .order_by(EventParticipation.joined_at.desc())
+    )
+    existing_participations = existing_query.scalars().all()
+
+    # Check for active (non-cancelled) participation
+    for existing in existing_participations:
+        if existing.status != ParticipationStatus.CANCELLED:
+            raise HTTPException(
+                status_code=400,
+                detail="คุณได้สมัครกิจกรรมนี้แล้ว"
+            )
+
+    # If user has a cancelled participation, reactivate it
+    if existing_participations:
+        cancelled_participation = existing_participations[0]  # Most recent
+
+        # Generate new join code
+        join_code = generate_join_code()
+        while await get_participation_by_join_code(db, join_code):
+            join_code = generate_join_code()
+
+        # Reset the participation
+        cancelled_participation.status = ParticipationStatus.JOINED
+        cancelled_participation.join_code = join_code
+        cancelled_participation.joined_at = datetime.now(timezone.utc)
+        cancelled_participation.cancellation_reason = None
+        cancelled_participation.cancelled_at = None
+
+        await db.commit()
+        await db.refresh(cancelled_participation)
+
+        # Get event details for notification
+        event = await db.execute(select(Event).where(Event.id == participation.event_id))
+        event_obj = event.scalar_one_or_none()
+
+        # 🔔 Notify: Registered
+        if event_obj:
+            await notification_crud.notify_event_joined(
+                db, user_id, participation.event_id, cancelled_participation.id, event_obj.title
+            )
+
+        return cancelled_participation
+
+    # Create new participation if no existing record
     # Generate unique join code
     join_code = generate_join_code()
     while await get_participation_by_join_code(db, join_code):
@@ -542,14 +594,9 @@ async def get_user_all_events_stats(
     }
 
 
-# src/crud/event_participation_crud.py - เพิ่ม/แก้ไข functions
-
-from datetime import datetime, timezone, timedelta, date
-from sqlalchemy.future import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, and_
-from fastapi import HTTPException, status
-
+# ========================================
+# 🆕 Daily Participation & Limit Logic
+# ========================================
 
 async def check_daily_registration_limit(
         db: AsyncSession,
@@ -558,8 +605,11 @@ async def check_daily_registration_limit(
 ) -> dict:
     """
     🔍 ตรวจสอบว่าผู้ใช้สามารถลงทะเบียนวันนี้ได้หรือไม่
+    - ตรวจสอบ Date Range ของกิจกรรม (เริ่ม-จบ)
+    - ตรวจสอบว่าวันนี้ลงทะเบียนไปแล้วหรือยัง (One time per day)
+    - ตรวจสอบจำนวนครั้งสูงสุด (Max check-ins)
     """
-    from src.models.event import Event
+    # ✅ FIX: ใช้ DateTime จาก Event โดยตรง และแปลงเป็น date
 
     # Get event info
     event_result = await db.execute(select(Event).where(Event.id == event_id))
@@ -571,8 +621,33 @@ async def check_daily_registration_limit(
             detail="Event not found"
         )
 
+    # กำหนดเวลาปัจจุบัน (UTC) เพื่อความถูกต้องและสอดคล้องกับทั้งระบบ
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
+    event_start_date = event.event_date.date()
+    event_end_date = event.event_end_date.date() if event.event_end_date else event_start_date
+
+    # 1. เช็คว่าวันนี้อยู่ในช่วงเวลากิจกรรมหรือไม่
+    if today < event_start_date:
+        return {
+            "can_register": False,
+            "reason": f"กิจกรรมยังไม่เริ่ม (เริ่มวันที่ {event_start_date})",
+            "today_registration": None,
+            "total_checkins": 0
+        }
+
+    if today > event_end_date:
+        return {
+            "can_register": False,
+            "reason": f"กิจกรรมสิ้นสุดแล้ว (สิ้นสุดวันที่ {event_end_date})",
+            "today_registration": None,
+            "total_checkins": 0
+        }
+
     # ถ้าเป็นกิจกรรมแบบวันเดียว - ใช้ logic เดิม
-    if not hasattr(event, 'event_type') or event.event_type != 'multi_day':
+    if not hasattr(event, 'event_type') or event.event_type != EventType.MULTI_DAY:
         existing = await db.execute(
             select(EventParticipation)
             .where(
@@ -595,16 +670,15 @@ async def check_daily_registration_limit(
             "total_checkins": 0
         }
 
-    # 🆕 กิจกรรมแบบหลายวัน
-    today = date.today()
+    # 🆕 กิจกรรมแบบหลายวัน (Multi-day)
 
-    # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง
+    # 2. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
     today_registration = await db.execute(
         select(EventParticipation)
         .where(
             EventParticipation.user_id == user_id,
             EventParticipation.event_id == event_id,
-            EventParticipation.checkin_date == today,
+            EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
             EventParticipation.status != ParticipationStatus.CANCELLED
         )
     )
@@ -614,11 +688,10 @@ async def check_daily_registration_limit(
         return {
             "can_register": False,
             "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (รหัส: {existing_today.join_code})",
-            "today_registration": existing_today,
-            "total_checkins": 0
+            "today_registration": existing_today
         }
 
-    # 2. ตรวจสอบจำนวนครั้งทั้งหมด
+    # 3. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
     if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
         total_checkins_result = await db.execute(
             select(func.count(EventParticipation.id))
@@ -657,9 +730,7 @@ async def create_daily_participation(
     """
     🆕 สร้าง participation แบบรายวัน
     """
-    from src.models.event import Event
-
-    # ตรวจสอบว่าลงทะเบียนได้หรือไม่
+    # ตรวจสอบว่าลงทะเบียนได้หรือไม่ (จะเช็ค Date Range และ Limit ให้)
     check_result = await check_daily_registration_limit(
         db, user_id, participation.event_id
     )
@@ -681,8 +752,8 @@ async def create_daily_participation(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
-    # กำหนดวันหมดอายุ
-    today = date.today()
+    # กำหนดวันหมดอายุ (สิ้นสุดของวันนี้ UTC)
+    today = datetime.now(timezone.utc).date()
     code_expires_at = datetime.combine(
         today,
         datetime.max.time()
@@ -804,12 +875,13 @@ async def get_user_daily_checkin_stats(
     sorted_dates = sorted([p.checkin_date for p in participations if p.checkin_date], reverse=True)
 
     if sorted_dates:
-        expected_date = date.today()
+        expected_date = datetime.now(timezone.utc).date()
         for check_date in sorted_dates:
             if check_date == expected_date:
                 current_streak += 1
                 expected_date -= timedelta(days=1)
-            else:
+            elif check_date < expected_date:
+                # ถ้าวันล่าสุดที่ check คือเมื่อวาน (หรือไกลกว่า) ก็หลุด streak
                 break
 
     calendar = []
@@ -834,32 +906,22 @@ async def get_user_daily_checkin_stats(
     }
 
 
-# เพิ่ม function นี้ใน src/crud/event_participation_crud.py
-# (หลังจาก check_in_participation และก่อน submit_proof)
-
 async def check_out_participation(db: AsyncSession, join_code: str, staff_id: int) -> Optional[EventParticipation]:
     """
     🆕 Check-out participant หลังจบกิจกรรม
-
-    Args:
-        db: Database session
-        join_code: รหัส check-in
-        staff_id: ID ของ staff ที่ทำการ check-out
-
-    Returns:
-        EventParticipation ถ้าสำเร็จ, None ถ้าไม่สำเร็จ
     """
     participation = await get_participation_by_join_code(db, join_code)
 
-    # ตรวจสอบเงื่อนไข
     if not participation:
         return None
 
-    if participation.status != ParticipationStatus.CHECKED_OUT:
+    if participation.status != ParticipationStatus.CHECKED_IN:
+        # อาจจะเพิ่ม logic ให้ check-out ได้ถ้าสถานะเป็น joined แต่ข้ามขั้นตอน (optional)
         return None
 
-    # Check-out
-    participation.status = ParticipationStatus.COMPLETED
+    # Check-out -> เปลี่ยนเป็น COMPLETED ทันที หรือจะเป็น CHECKED_OUT แล้วค่อยส่ง proof ก็ได้
+    # ตาม requirement เดิมดูเหมือนจะมี step proof submission
+    participation.status = ParticipationStatus.CHECKED_OUT
     participation.checked_out_by = staff_id
     participation.checked_out_at = datetime.now(timezone.utc)
 
@@ -874,3 +936,209 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
         )
 
     return participation
+
+
+# ========================================
+# 🆕 Pre-registration Functions
+# ========================================
+
+async def pre_register_for_multi_day_event(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int
+) -> dict:
+    """
+    📝 ลงทะเบียนล่วงหน้าสำหรับกิจกรรมแบบหลายวัน
+    ระบบจะสร้างรหัสอัตโนมัติทุกวันให้ผู้ใช้
+    """
+    # ✅ FIX: Update to use timezone-aware datetime consistently
+    from src.models.event import Event
+
+    event_result = await db.execute(
+        select(Event).where(Event.id == event_id)
+    )
+    event = event_result.scalar_one_or_none()
+
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ไม่พบกิจกรรมนี้"
+        )
+
+    if event.event_type != EventType.MULTI_DAY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="กิจกรรมนี้ไม่รองรับการลงทะเบียนล่วงหน้า"
+        )
+
+    existing = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status != ParticipationStatus.CANCELLED
+            )
+        )
+        .limit(1)
+    )
+
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="คุณได้ลงทะเบียนกิจกรรมนี้แล้ว"
+        )
+
+    # ใช้วันที่ปัจจุบันแบบ UTC
+    today = datetime.now(timezone.utc).date()
+    event_start = event.event_date.date()
+    event_end = event.event_end_date.date() if event.event_end_date else event_start
+
+    if today > event_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="กิจกรรมนี้จบไปแล้ว ไม่สามารถลงทะเบียนได้"
+        )
+
+    first_day = max(event_start, today)
+
+    join_code = generate_join_code()
+    while await get_participation_by_join_code(db, join_code):
+        join_code = generate_join_code()
+
+    code_expires_at = datetime.combine(
+        first_day,
+        datetime.max.time()
+    ).replace(tzinfo=timezone.utc)
+
+    new_participation = EventParticipation(
+        user_id=user_id,
+        event_id=event_id,
+        join_code=join_code,
+        status=ParticipationStatus.JOINED,
+        checkin_date=first_day,
+        code_used=False,
+        code_expires_at=code_expires_at
+    )
+
+    db.add(new_participation)
+    await db.commit()
+    await db.refresh(new_participation)
+
+    await notification_crud.notify_event_joined(
+        db, user_id, event_id,
+        new_participation.id, event.title
+    )
+
+    return {
+        "success": True,
+        "message": "ลงทะเบียนสำเร็จ! ระบบจะสร้างรหัสอัตโนมัติทุกวัน",
+        "first_code": join_code,
+        "first_date": first_day,
+        "event_end_date": event_end
+    }
+
+
+async def get_user_pre_registration_status(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int
+) -> dict:
+    """
+    📊 ตรวจสอบสถานะการลงทะเบียนล่วงหน้า
+    """
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status != ParticipationStatus.CANCELLED
+            )
+        )
+        .order_by(EventParticipation.checkin_date.desc())
+    )
+    participations = result.scalars().all()
+
+    if not participations:
+        return {
+            "is_registered": False,
+            "total_codes": 0,
+            "active_codes": 0,
+            "used_codes": 0,
+            "expired_codes": 0
+        }
+
+    today = datetime.now(timezone.utc).date()
+    active_codes = []
+    used_codes = 0
+    expired_codes = 0
+
+    for p in participations:
+        if p.status == ParticipationStatus.JOINED and not p.code_used:
+            if p.checkin_date == today:
+                active_codes.append({
+                    "code": p.join_code,
+                    "date": p.checkin_date,
+                    "expires_at": p.code_expires_at
+                })
+        elif p.code_used or p.status in [ParticipationStatus.CHECKED_IN, ParticipationStatus.COMPLETED]:
+            used_codes += 1
+        elif p.status == ParticipationStatus.EXPIRED:
+            expired_codes += 1
+
+    return {
+        "is_registered": True,
+        "total_codes": len(participations),
+        "active_codes": len(active_codes),
+        "used_codes": used_codes,
+        "expired_codes": expired_codes,
+        "today_code": active_codes[0] if active_codes else None
+    }
+
+
+async def cancel_pre_registration(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int,
+        reason: Optional[str] = None
+) -> dict:
+    """
+    ❌ ยกเลิกการลงทะเบียนล่วงหน้า
+    """
+    result = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status == ParticipationStatus.JOINED,
+                EventParticipation.code_used == False
+            )
+        )
+    )
+    unused_participations = result.scalars().all()
+
+    if not unused_participations:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ไม่พบรหัสที่สามารถยกเลิกได้"
+        )
+
+    now = datetime.now(timezone.utc)
+    cancelled_count = 0
+
+    for p in unused_participations:
+        p.status = ParticipationStatus.CANCELLED
+        p.cancellation_reason = reason or "ยกเลิกโดยผู้ใช้"
+        p.cancelled_at = now
+        p.updated_at = now
+        cancelled_count += 1
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"ยกเลิกรหัสทั้งหมด {cancelled_count} รหัสแล้ว",
+        "cancelled_count": cancelled_count
+    }

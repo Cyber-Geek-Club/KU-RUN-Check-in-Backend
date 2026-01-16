@@ -179,10 +179,10 @@ async def get_or_create_entry(
 
 
 async def update_entry_progress(
-    db: AsyncSession,
-    config_id: int,
-    user_id: int,
-    event_id: int
+        db: AsyncSession,
+        config_id: int,
+        user_id: int,
+        event_id: int
 ) -> Optional[RewardLeaderboardEntry]:
     """
     Update user's progress when they complete an event
@@ -190,15 +190,20 @@ async def update_entry_progress(
     """
     # Get config
     config = await get_leaderboard_config_by_id(db, config_id)
-    
+
     if not config or not config.is_active:
         return None
-    
-    # Check if event is within leaderboard timeframe
-    now = datetime.now(timezone.utc)
-    if now < config.starts_at or now > config.ends_at:
+
+    # ✅ FIX: เปลี่ยนจากการเช็คเวลาจบกิจกรรม เป็นการเช็คสถานะ Finalize แทน
+    # เพื่อให้ Staff สามารถ Verify ผลย้อนหลังได้หลังจากกิจกรรมจบ
+    if config.finalized_at:
         return None
-    
+
+    # (ลบโค้ดเดิมที่เช็ค starts_at/ends_at ออก)
+    # now = datetime.now(timezone.utc)
+    # if now < config.starts_at or now > config.ends_at:
+    #     return None
+
     # Get all user's completed participations for this event
     result = await db.execute(
         select(EventParticipation)
@@ -210,26 +215,34 @@ async def update_entry_progress(
         .order_by(EventParticipation.completed_at)
     )
     completions = result.scalars().all()
-    
+
     if not completions:
         return None
-    
+
     # Get or create entry
     entry = await get_or_create_entry(db, config_id, user_id)
-    
+
     # Update completions
     entry.total_completions = len(completions)
     entry.completed_event_participations = [p.id for p in completions]
-    
-    # Check if qualified (reached required completions)
-    if entry.total_completions >= config.required_completions and not entry.qualified_at:
+
+    # Check if qualified for ANY tier
+    # Get the minimum required_completions from all tiers (or config default)
+    reward_tiers = [RewardTier(**tier) for tier in config.reward_tiers]
+    min_required = config.required_completions  # default
+    for tier in reward_tiers:
+        tier_required = tier.required_completions if tier.required_completions else config.required_completions
+        min_required = min(min_required, tier_required)
+
+    # Check if qualified (reached minimum required completions for any tier)
+    if entry.total_completions >= min_required and not entry.qualified_at:
         entry.qualified_at = datetime.now(timezone.utc)
-    
+
     entry.updated_at = datetime.now(timezone.utc)
-    
+
     await db.commit()
     await db.refresh(entry)
-    
+
     return entry
 
 
