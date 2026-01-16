@@ -37,6 +37,9 @@ class Event(Base):
     # Multi-day settings
     allow_daily_checkin = Column(Boolean, default=False)
     max_checkins_per_user = Column(Integer, nullable=True)
+    
+    # Holiday settings
+    # Note: วันหยุดจะถูกเก็บในตาราง event_holidays แยกต่างหาก
 
     # Event image/banner
     banner_image_url = Column(Text, nullable=True)
@@ -62,12 +65,21 @@ class Event(Base):
         passive_deletes=True
     )
     
-    # 🆕 ADD THIS RELATIONSHIP
+    # Leaderboard relationship
     leaderboard_config = relationship(
         "RewardLeaderboardConfig",
         back_populates="event",
         uselist=False,  # One-to-one relationship
         cascade="all, delete-orphan"
+    )
+    
+    # Holidays relationship
+    holidays = relationship(
+        "EventHoliday",
+        back_populates="event",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="EventHoliday.holiday_date"
     )
 
     @property
@@ -102,3 +114,23 @@ class Event(Base):
         if self.max_participants is None:
             return False
         return self.participant_count >= self.max_participants
+    
+    @property
+    def total_days(self) -> int:
+        """คำนวณจำนวนวันทั้งหมดของกิจกรรม"""
+        if not self.is_multi_day or not self.event_end_date:
+            return 1
+        delta = self.event_end_date.date() - self.event_date.date()
+        return delta.days + 1
+    
+    @property
+    def holiday_count(self) -> int:
+        """นับจำนวนวันหยุด"""
+        if not self.holidays:
+            return 0
+        return len(self.holidays)
+    
+    @property
+    def working_days_count(self) -> int:
+        """คำนวณจำนวนวันทำการ (ไม่รวมวันหยุด)"""
+        return self.total_days - self.holiday_count

@@ -51,7 +51,7 @@ class User(Base):
     # Account locking
     failed_login_attempts = Column(Integer, default=0)
     is_locked = Column(Boolean, default=False)
-    locked_at = Column(DateTime, nullable=True)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

@@ -20,6 +20,9 @@ from src.schemas.reward_lb_schema import (
     UserLeaderboardStatus,
     UserRewardSummary,
     FinalizeLeaderboardRequest,
+    UserEventStatusDetail,
+    UserEventStatusList,
+    EventUsersSummary,
 )
 from src.models.user import User
 from typing import List, Optional
@@ -210,6 +213,84 @@ async def calculate_rankings(
         "ranked_count": ranked_count,
         "message": f"Calculated ranks for {ranked_count} participants"
     }
+
+
+# ========== User Event Status Tracking (Organizer/Staff) ==========
+
+@router.get("/events/{event_id}/users", response_model=UserEventStatusList)
+async def get_all_users_in_event(
+    event_id: int,
+    skip: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    Get all users' status in a specific event (Staff/Organizer Only)
+    
+    ดูสถานะของผู้เข้าร่วมทุกคนในกิจกรรม:
+    - จำนวนครั้งที่เข้าร่วม
+    - สถานะ check-in, completed, rejected
+    - ความคืบหน้าในแต่ละ tier
+    - อันดับใน leaderboard
+    """
+    result = await reward_lb_crud.get_all_users_event_status(db, event_id, skip, limit)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    return result
+
+
+@router.get("/events/{event_id}/users/{user_id}", response_model=UserEventStatusDetail)
+async def get_user_status_in_event(
+    event_id: int,
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    Get specific user's status in an event (Staff/Organizer Only)
+    
+    ดูสถานะของผู้เข้าร่วมคนใดคนหนึ่งในกิจกรรม:
+    - จำนวนครั้งที่เข้าร่วมทั้งหมด
+    - สถานะแต่ละครั้ง (check-in, completed, etc.)
+    - ระยะทางรวม
+    - ความคืบหน้าในแต่ละ tier
+    - รางวัลที่ได้รับ
+    """
+    result = await reward_lb_crud.get_user_event_status(db, user_id, event_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User or Event not found"
+        )
+    return result
+
+
+@router.get("/events/{event_id}/summary", response_model=EventUsersSummary)
+async def get_event_users_summary(
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_organizer)
+):
+    """
+    Get summary statistics of all users in an event (Staff/Organizer Only)
+    
+    ดูสรุปภาพรวมของกิจกรรม:
+    - จำนวนผู้เข้าร่วมทั้งหมด
+    - จำนวนแยกตามสถานะ (joined, checked_in, completed, etc.)
+    - จำนวนแยกตาม tier (Gold, Silver, Bronze)
+    - อัตราการเสร็จสิ้น
+    """
+    result = await reward_lb_crud.get_event_users_summary(db, event_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    return result
 
 
 @router.post("/configs/{config_id}/finalize")

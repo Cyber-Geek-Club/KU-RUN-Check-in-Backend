@@ -96,7 +96,7 @@ async def create_student(db: AsyncSession, student: StudentCreate) -> Student:
         faculty=student.faculty,
         is_verified=False,
         verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
 
     db.add(db_student)
@@ -120,7 +120,7 @@ async def create_officer(db: AsyncSession, officer: OfficerCreate) -> Officer:
         department=officer.department,
         is_verified=False,
         verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
 
     db.add(db_officer)
@@ -144,7 +144,7 @@ async def create_staff(db: AsyncSession, staff: StaffCreate) -> Staff:
         department=staff.department,
         is_verified=False,
         verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
 
     db.add(db_staff)
@@ -167,7 +167,7 @@ async def create_organizer(db: AsyncSession, organizer: OrganizerCreate) -> Orga
         role=UserRole.ORGANIZER,
         is_verified=False,
         verification_token=verification_token,
-        verification_token_expires=datetime.utcnow() + timedelta(hours=24)
+        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24)
     )
 
     db.add(db_organizer)
@@ -223,7 +223,7 @@ async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> 
     if not user:
         return None
 
-    for key, value in user_data.dict(exclude_unset=True).items():
+    for key, value in user_data.model_dump(exclude_unset=True).items():
         setattr(user, key, value)
 
     await db.commit()
@@ -279,7 +279,7 @@ async def increment_failed_login(db: AsyncSession, user: User) -> User:
     # Lock account if failed attempts reach 10
     if user.failed_login_attempts >= 10:
         user.is_locked = True
-        user.locked_at = datetime.utcnow()
+        user.locked_at = datetime.now(timezone.utc)
 
     await db.commit()
     return user

@@ -209,6 +209,51 @@ async def join_event_daily(
         db, participation, current_user.id
     )
 
+
+@router.post("/pre-register/{event_id}", status_code=status.HTTP_201_CREATED)
+async def pre_register_multi_day_event(
+        event_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    📝 ลงทะเบียนล่วงหน้าสำหรับกิจกรรมแบบหลายวัน
+    ระบบจะสร้างรหัสอัตโนมัติทุกวันให้
+    """
+    return await event_participation_crud.pre_register_for_multi_day_event(
+        db, current_user.id, event_id
+    )
+
+
+@router.get("/pre-register-status/{event_id}")
+async def get_pre_registration_status(
+        event_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    📊 ตรวจสอบสถานะการลงทะเบียนล่วงหน้า
+    """
+    return await event_participation_crud.get_user_pre_registration_status(
+        db, current_user.id, event_id
+    )
+
+
+@router.delete("/pre-register/{event_id}")
+async def cancel_pre_registration(
+        event_id: int,
+        reason: Optional[str] = None,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    ❌ ยกเลิกการลงทะเบียนล่วงหน้า
+    """
+    return await event_participation_crud.cancel_pre_registration(
+        db, current_user.id, event_id, reason
+    )
+
+
 @router.get("/check-daily-limit/{event_id}")
 async def check_daily_registration_limit_endpoint(
         event_id: int,

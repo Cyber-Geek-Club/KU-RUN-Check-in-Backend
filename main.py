@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import logging
 from src.database.db_config import init_db
 from fastapi.staticfiles import StaticFiles
 from src.api.endpoints import (
@@ -9,9 +10,20 @@ from src.api.endpoints import (
     rewards, 
     users, 
     images, 
-    notifications
+    notifications,
+    event_holidays,
+    reward_lb_endpoints,
+    strava,
+    participant_snapshots
 )
-from src.api.endpoints import reward_lb_endpoints
+from src.services.scheduler_service import start_scheduler, shutdown_scheduler
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="KU RUN Check-in API",
@@ -38,9 +50,20 @@ app.add_middleware(
 # Initialize database connection
 @app.on_event("startup")
 async def on_startup():
+    logger.info("🚀 Starting KU RUN Check-in API...")
     await init_db()
-    print("✅ Database initialized")
-    print(f"✅ CORS enabled for: {allowed_origins}")
+    logger.info("✅ Database initialized")
+    
+    # Start scheduler for auto-unlock/lock
+    start_scheduler()
+    logger.info("✅ Scheduler started")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    logger.info("🛑 Shutting down KU RUN Check-in API...")
+    shutdown_scheduler()
+    logger.info("✅ Scheduler stopped")
 
 # Health check
 @app.get("/api")
@@ -54,7 +77,9 @@ async def health_check():
 # Include routers
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(events.router, prefix="/api/events", tags=["Events"])
+app.include_router(event_holidays.router, prefix="/api", tags=["Event Holidays"])
 app.include_router(participations.router, prefix="/api/participations", tags=["Participations"])
+app.include_router(participant_snapshots.router, prefix="/api", tags=["Participant Snapshots"])
 app.include_router(rewards.router, prefix="/api/rewards", tags=["Rewards"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
@@ -63,6 +88,7 @@ app.include_router(
     prefix="/api/reward-leaderboards", 
     tags=["Reward Leaderboards"]
 )
+app.include_router(strava.router, prefix="/api/strava", tags=["Strava"])
 
 # Mount static files
 app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")
