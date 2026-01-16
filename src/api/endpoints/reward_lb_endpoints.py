@@ -1,5 +1,5 @@
 """
-Reward Leaderboard API Endpoints - CORRECTED VERSION
+Reward Leaderboard API Endpoints - Updated with Dynamic Allocation
 Replace entire file: src/api/endpoints/reward_lb_endpoints.py
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -10,7 +10,6 @@ from src.api.dependencies import (
     require_organizer,
     require_staff_or_organizer
 )
-# ✅ CORRECT IMPORT - matches the actual module name
 from src.crud import reward_lb_crud
 from src.schemas.reward_lb_schema import (
     LeaderboardConfigCreate,
@@ -45,11 +44,11 @@ async def create_leaderboard_config(
             detail=f"Event {config.event_id} already has a leaderboard configuration"
         )
 
-    total_slots = sum(tier.quantity for tier in config.reward_tiers)
-    if total_slots > config.max_reward_recipients:
+    # Validation for Logic: Logic relies on Max Reward Recipients (Global Inventory)
+    if config.max_reward_recipients < 1:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Total reward slots ({total_slots}) exceeds max_reward_recipients ({config.max_reward_recipients})"
+             status_code=status.HTTP_400_BAD_REQUEST,
+             detail="max_reward_recipients must be at least 1 (Global Inventory)"
         )
 
     return await reward_lb_crud.create_leaderboard_config(db, config, current_user.id)
@@ -64,7 +63,6 @@ async def get_all_leaderboard_configs(
     current_user: User = Depends(require_organizer)
 ):
     """Get All Leaderboard Configurations (Organizer Only)"""
-    # ✅ FIXED: Using reward_lb_crud (not reward_leaderboard_crud)
     return await reward_lb_crud.get_all_leaderboard_configs(db, skip, limit, is_active)
 
 
@@ -162,7 +160,7 @@ async def delete_leaderboard_config(
 @router.get("/configs/{config_id}/entries", response_model=List[LeaderboardEntryRead])
 async def get_leaderboard_entries(
     config_id: int,
-    qualified_only: bool = Query(False, description="Show only qualified participants"),
+    qualified_only: bool = Query(False, description="Show only qualified/awarded participants"),
     skip: int = 0,
     limit: int = 1000,
     db: AsyncSession = Depends(get_db),
@@ -200,97 +198,31 @@ async def calculate_rankings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_organizer)
 ):
-    """Calculate Rankings (Organizer Only)"""
+    """
+    Preview Allocation (Organizer Only)
+
+    This calculates the 'Dynamic Priority Reallocation' WITHOUT finalizing.
+    Use this to preview who will get rewards based on the current situation.
+    """
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard configuration not found"
         )
-    ranked_count = await reward_lb_crud.calculate_rankings(db, config_id)
-    return {
-        "success": True,
-        "ranked_count": ranked_count,
-        "message": f"Calculated ranks for {ranked_count} participants"
-    }
 
-
-# ========== User Event Status Tracking (Organizer/Staff) ==========
-
-@router.get("/events/{event_id}/users", response_model=UserEventStatusList)
-async def get_all_users_in_event(
-    event_id: int,
-    skip: int = 0,
-    limit: int = Query(100, ge=1, le=500),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_staff_or_organizer)
-):
-    """
-    Get all users' status in a specific event (Staff/Organizer Only)
-    
-    ดูสถานะของผู้เข้าร่วมทุกคนในกิจกรรม:
-    - จำนวนครั้งที่เข้าร่วม
-    - สถานะ check-in, completed, rejected
-    - ความคืบหน้าในแต่ละ tier
-    - อันดับใน leaderboard
-    """
-    result = await reward_lb_crud.get_all_users_event_status(db, event_id, skip, limit)
-    if not result:
+    try:
+        stats = await reward_lb_crud.calculate_and_allocate_rewards(db, config_id)
+        return {
+            "success": True,
+            "message": f"Calculated dynamic allocation. Awarded: {stats['awarded']}, Waitlisted: {stats['waitlisted']}",
+            "stats": stats
+        }
+    except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
-    return result
-
-
-@router.get("/events/{event_id}/users/{user_id}", response_model=UserEventStatusDetail)
-async def get_user_status_in_event(
-    event_id: int,
-    user_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_staff_or_organizer)
-):
-    """
-    Get specific user's status in an event (Staff/Organizer Only)
-    
-    ดูสถานะของผู้เข้าร่วมคนใดคนหนึ่งในกิจกรรม:
-    - จำนวนครั้งที่เข้าร่วมทั้งหมด
-    - สถานะแต่ละครั้ง (check-in, completed, etc.)
-    - ระยะทางรวม
-    - ความคืบหน้าในแต่ละ tier
-    - รางวัลที่ได้รับ
-    """
-    result = await reward_lb_crud.get_user_event_status(db, user_id, event_id)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User or Event not found"
-        )
-    return result
-
-
-@router.get("/events/{event_id}/summary", response_model=EventUsersSummary)
-async def get_event_users_summary(
-    event_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_staff_or_organizer)
-):
-    """
-    Get summary statistics of all users in an event (Staff/Organizer Only)
-    
-    ดูสรุปภาพรวมของกิจกรรม:
-    - จำนวนผู้เข้าร่วมทั้งหมด
-    - จำนวนแยกตามสถานะ (joined, checked_in, completed, etc.)
-    - จำนวนแยกตาม tier (Gold, Silver, Bronze)
-    - อัตราการเสร็จสิ้น
-    """
-    result = await reward_lb_crud.get_event_users_summary(db, event_id)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
-        )
-    return result
 
 
 @router.post("/configs/{config_id}/finalize")
@@ -334,6 +266,59 @@ async def finalize_leaderboard(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+# ========== User Event Status Tracking (Organizer/Staff) ==========
+
+@router.get("/events/{event_id}/users", response_model=UserEventStatusList)
+async def get_all_users_in_event(
+    event_id: int,
+    skip: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_organizer)
+):
+    """Get all users' status in a specific event (Staff/Organizer Only)"""
+    result = await reward_lb_crud.get_all_users_event_status(db, event_id, skip, limit)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    return result
+
+
+@router.get("/events/{event_id}/users/{user_id}", response_model=UserEventStatusDetail)
+async def get_user_status_in_event(
+    event_id: int,
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_organizer)
+):
+    """Get specific user's status in an event (Staff/Organizer Only)"""
+    result = await reward_lb_crud.get_user_event_status(db, user_id, event_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User or Event not found"
+        )
+    return result
+
+
+@router.get("/events/{event_id}/summary", response_model=EventUsersSummary)
+async def get_event_users_summary(
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_or_organizer)
+):
+    """Get summary statistics of all users in an event (Staff/Organizer Only)"""
+    result = await reward_lb_crud.get_event_users_summary(db, event_id)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    return result
 
 
 @router.get("/my-leaderboards", response_model=UserRewardSummary)
