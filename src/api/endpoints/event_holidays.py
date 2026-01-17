@@ -152,10 +152,10 @@ async def create_bulk_holidays(
 
 @router.post("/events/{event_id}/holidays/quick", response_model=BulkHolidayResponse)
 async def quick_create_holidays(
-    event_id: int = Path(..., description="Event ID"),
-    quick_data: QuickHolidayCreate = ...,
-    current_user: User = Depends(require_staff_or_organizer),
-    db: AsyncSession = Depends(get_db)
+        event_id: int = Path(..., description="Event ID"),
+        quick_data: QuickHolidayCreate = ...,
+        current_user: User = Depends(require_staff_or_organizer),
+        db: AsyncSession = Depends(get_db)
 ):
     """
     เพิ่มวันหยุดแบบง่าย (ระบุแค่วันที่)
@@ -168,24 +168,46 @@ async def quick_create_holidays(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found"
         )
-    
+
     if not event.is_multi_day:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot add holidays to single-day events"
         )
-    
-    # สร้างวันหยุด
+
+    # --- เริ่มส่วนแก้ไข: เพิ่ม Validation ช่วงวันที่ ---
+    event_start = event.event_date.date()
+    event_end = event.event_end_date.date() if event.event_end_date else event_start
+
+    valid_dates = []
+    valid_names = []
+
+    # เตรียม list ชื่อวันหยุด (ถ้าไม่ได้ส่งมา ให้เป็น None ทั้งหมดเพื่อให้ zip ทำงานได้)
+    input_names = quick_data.holiday_names if quick_data.holiday_names else [None] * len(quick_data.holiday_dates)
+
+    # วนลูปตรวจสอบวันที่ว่าอยู่ในช่วงหรือไม่
+    for date_obj, name in zip(quick_data.holiday_dates, input_names):
+        if event_start <= date_obj <= event_end:
+            valid_dates.append(date_obj)
+            if quick_data.holiday_names:
+                valid_names.append(name)
+
+    # เตรียมข้อมูลสำหรับส่งไป CRUD
+    pass_names = valid_names if quick_data.holiday_names else None
+    # --- จบส่วนแก้ไข ---
+
+    # สร้างวันหยุด (ส่งเฉพาะวันที่ Valid ไป)
     holidays = await event_holiday_crud.bulk_create_holidays(
         db=db,
         event_id=event_id,
-        holiday_dates=quick_data.holiday_dates,
-        holiday_names=quick_data.holiday_names,
+        holiday_dates=valid_dates,
+        holiday_names=pass_names,
         created_by=current_user.id
     )
-    
+
+    # คำนวณจำนวนที่ถูกข้าม (รวมทั้งที่อยู่นอกช่วงวันที่ และที่มีอยู่แล้วใน DB)
     skipped = len(quick_data.holiday_dates) - len(holidays)
-    
+
     return BulkHolidayResponse(
         success=True,
         created_count=len(holidays),
