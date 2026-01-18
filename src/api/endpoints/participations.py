@@ -1209,8 +1209,11 @@ async def get_pending_proofs_all_events(
     }
 
 # ==========================================
-# MOVED GENERIC GETTER TO BOTTOM
+# MOVED GENERIC GETTER TO BOTTOM (MUST BE LAST)
 # ==========================================
+# ⚠️ WARNING: This route MUST be at the very end of the file
+# because it matches ANY path like /{participation_id}
+# and will conflict with routes like /check-in, /check-in-daily, etc.
 
 @router.get("/{participation_id}", response_model=EventParticipationRead)
 async def get_participation(
@@ -1218,6 +1221,7 @@ async def get_participation(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
+    """Get specific participation by ID - MUST BE LAST ROUTE"""
     participation = await event_participation_crud.get_participation_by_id(db, participation_id)
     if not participation:
         raise HTTPException(status_code=404, detail="Participation not found")
