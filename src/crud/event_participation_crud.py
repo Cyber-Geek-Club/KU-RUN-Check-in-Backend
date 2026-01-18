@@ -922,7 +922,7 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
 
     # ✅ FIX: ปรับ Logic การเปลี่ยนสถานะ
     # ถ้าส่งหลักฐานแล้ว (proof_submitted) เมื่อ check-out ให้ถือว่า "สำเร็จ" (COMPLETED)
-    if participation.status == ParticipationStatus.PROOF_SUBMITTED:
+    if participation.status == ParticipationStatus.CHECKED_OUT:
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_at = datetime.now(timezone.utc)
         participation.completed_by = staff_id
