@@ -362,7 +362,7 @@ async def get_checkout_code(
     
     # ✅ แสดง checkout code ก็ต่อเมื่อ status = proof_submitted
     # Note: Comparison is safe here, but attribute access below needs safety check
-    if participation.status != ParticipationStatus.PROOF_SUBMITTED:
+    if participation.status != ParticipationStatus.CHECKED_OUT:
         status_val = participation.status.value if hasattr(participation.status, 'value') else participation.status
         raise HTTPException(
             status_code=400,
