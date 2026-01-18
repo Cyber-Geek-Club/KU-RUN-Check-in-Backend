@@ -40,6 +40,17 @@ class LeaderboardConfigBase(BaseModel):
     starts_at: datetime = Field(..., description="When leaderboard tracking starts")
     ends_at: datetime = Field(..., description="When leaderboard tracking ends")
 
+    @field_validator('ends_at')
+    @classmethod
+    def validate_dates(cls, v, info):
+        if 'starts_at' in info.data and v <= info.data['starts_at']:
+            raise ValueError('ends_at must be after starts_at')
+        return v
+
+
+class LeaderboardConfigCreate(LeaderboardConfigBase):
+    """Create new leaderboard configuration"""
+
     @field_validator('reward_tiers')
     @classmethod
     def validate_reward_tiers(cls, v):
@@ -60,18 +71,6 @@ class LeaderboardConfigBase(BaseModel):
 
         return v
 
-    @field_validator('ends_at')
-    @classmethod
-    def validate_dates(cls, v, info):
-        if 'starts_at' in info.data and v <= info.data['starts_at']:
-            raise ValueError('ends_at must be after starts_at')
-        return v
-
-
-class LeaderboardConfigCreate(LeaderboardConfigBase):
-    """Create new leaderboard configuration"""
-    pass
-
 
 class LeaderboardConfigUpdate(BaseModel):
     """Update leaderboard configuration"""
@@ -83,6 +82,29 @@ class LeaderboardConfigUpdate(BaseModel):
     starts_at: Optional[datetime] = None
     ends_at: Optional[datetime] = None
     is_active: Optional[bool] = None
+
+    @field_validator('reward_tiers')
+    @classmethod
+    def validate_reward_tiers(cls, v):
+        if v is None:
+            return v
+
+        if not v:
+            raise ValueError('At least one reward tier is required')
+
+        # Check tier numbers are sequential
+        tier_numbers = sorted([t.tier for t in v])
+        expected = list(range(1, len(v) + 1))
+        if tier_numbers != expected:
+            raise ValueError(f'Tier numbers must be sequential: {expected}')
+
+        # Check for rank overlaps
+        tiers_sorted = sorted(v, key=lambda x: x.min_rank)
+        for i in range(len(tiers_sorted) - 1):
+            if tiers_sorted[i].max_rank >= tiers_sorted[i + 1].min_rank:
+                raise ValueError(f'Tier ranks overlap: Tier {tiers_sorted[i].tier} and {tiers_sorted[i + 1].tier}')
+
+        return v
 
 
 class LeaderboardConfigRead(LeaderboardConfigBase):

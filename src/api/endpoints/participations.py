@@ -882,7 +882,6 @@ async def validate_join_code(
     participation, user = row
     current_status = participation.status.value if hasattr(participation.status, 'value') else participation.status
 
-    # Validate based on action
     if action == "check_in":
         if current_status != "joined":
             return {
@@ -893,7 +892,9 @@ async def validate_join_code(
             }
 
     elif action == "check_out":
-        if current_status != "checked_in":
+        # ✅ FIX: เพิ่ม proof_submitted ให้เป็นสถานะที่ยอมรับได้
+        # จากเดิม: if current_status != "checked_in":
+        if current_status not in ["checked_in", "proof_submitted"]:
             return {
                 "valid": False,
                 "message": f"❌ สถานะปัจจุบันคือ '{current_status}' - ต้อง check-in ก่อน",

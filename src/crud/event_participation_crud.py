@@ -915,13 +915,21 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
     if not participation:
         return None
 
-    if participation.status != ParticipationStatus.CHECKED_IN:
-        # อาจจะเพิ่ม logic ให้ check-out ได้ถ้าสถานะเป็น joined แต่ข้ามขั้นตอน (optional)
+    # ✅ FIX: แก้ไขเงื่อนไขให้รองรับ PROOF_SUBMITTED ด้วย
+    # จากเดิม: if participation.status != ParticipationStatus.CHECKED_IN:
+    if participation.status not in [ParticipationStatus.CHECKED_IN, ParticipationStatus.PROOF_SUBMITTED]:
         return None
 
-    # Check-out -> เปลี่ยนเป็น COMPLETED ทันที หรือจะเป็น CHECKED_OUT แล้วค่อยส่ง proof ก็ได้
-    # ตาม requirement เดิมดูเหมือนจะมี step proof submission
-    participation.status = ParticipationStatus.CHECKED_OUT
+    # ✅ FIX: ปรับ Logic การเปลี่ยนสถานะ
+    # ถ้าส่งหลักฐานแล้ว (proof_submitted) เมื่อ check-out ให้ถือว่า "สำเร็จ" (COMPLETED)
+    if participation.status == ParticipationStatus.PROOF_SUBMITTED:
+        participation.status = ParticipationStatus.COMPLETED
+        participation.completed_at = datetime.now(timezone.utc)
+        participation.completed_by = staff_id
+    else:
+        # ถ้า check-in เฉยๆ แล้วออก (ไม่มีหลักฐาน) ให้เป็น CHECKED_OUT ตามเดิม
+        participation.status = ParticipationStatus.CHECKED_OUT
+
     participation.checked_out_by = staff_id
     participation.checked_out_at = datetime.now(timezone.utc)
 
