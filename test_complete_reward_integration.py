@@ -87,6 +87,13 @@ TEST_RUN_ID = str(uuid.uuid4())[:8]
 @pytest_asyncio.fixture(scope="function")
 async def db_engine():
     """Create database engine for tests"""
+    # IMPORTANT: Make sure TEST_DATABASE_URL points to test database, not production!
+    if "kurun_test" not in TEST_DATABASE_URL.lower() and "test" not in TEST_DATABASE_URL.lower():
+        raise ValueError(
+            "⚠️  TEST_DATABASE_URL must contain 'test' or 'kurun_test' to prevent accidental production data deletion! "
+            f"Current: {TEST_DATABASE_URL}"
+        )
+    
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, pool_pre_ping=True)
     
     # Create all tables
@@ -95,13 +102,23 @@ async def db_engine():
     
     yield engine
     
-    # Clean up: Drop all tables with CASCADE
+    # Clean up: Truncate all tables instead of dropping
     async with engine.begin() as conn:
-        # Use CASCADE to handle foreign key constraints
-        await conn.execute(text("DROP SCHEMA public CASCADE"))
-        await conn.execute(text("CREATE SCHEMA public"))
-        await conn.execute(text("GRANT ALL ON SCHEMA public TO postgres"))
-        await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+        # Disable foreign key checks temporarily
+        await conn.execute(text("SET session_replication_role = 'replica';"))
+        
+        # Get all table names
+        result = await conn.execute(text(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+        ))
+        tables = [row[0] for row in result]
+        
+        # Truncate all tables
+        for table in tables:
+            await conn.execute(text(f'TRUNCATE TABLE "{table}" CASCADE'))
+        
+        # Re-enable foreign key checks
+        await conn.execute(text("SET session_replication_role = 'origin';"))
     
     await engine.dispose()
 
