@@ -298,6 +298,8 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
             participation = EventParticipation(
                 user_id=student.id,
                 event_id=event.id,
+                join_code=f"TEST{i:05d}",  # Generate unique join code
+                completion_code=f"COMP{i:05d}",  # Generate unique completion code
                 status=ParticipationStatus.COMPLETED,
                 joined_at=datetime.now(timezone.utc),
                 checked_in_at=datetime.now(timezone.utc),
@@ -465,6 +467,8 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
             participation = EventParticipation(
                 user_id=student.id,
                 event_id=event_to_use.id,
+                join_code=f"LB{idx:02d}{i:03d}",  # LB01001, LB01002, etc.
+                completion_code=f"CMP{idx:02d}{i:03d}",
                 status=ParticipationStatus.COMPLETED,
                 joined_at=datetime.now(timezone.utc),
                 completed_at=now - timedelta(hours=num_completions - i)
