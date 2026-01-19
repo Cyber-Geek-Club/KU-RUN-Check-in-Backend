@@ -294,20 +294,17 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
         for i in range(num_completions):
             event = test_events[i % len(test_events)]
             
-            # Create participation
-            participation_data = EventParticipationCreate(
-                event_id=event.id
+            # Create participation directly (bypass duplicate check for testing)
+            participation = EventParticipation(
+                user_id=student.id,
+                event_id=event.id,
+                status=ParticipationStatus.COMPLETED,
+                joined_at=datetime.now(timezone.utc),
+                checked_in_at=datetime.now(timezone.utc),
+                checked_in_by=test_staff.id,
+                completed_at=datetime.now(timezone.utc)
             )
-            participation = await create_participation(db_session, participation_data, student.id)
-            
-            # Check-in (simulate staff checking in)
-            participation.status = ParticipationStatus.CHECKED_IN
-            participation.checked_in_at = datetime.now(timezone.utc)
-            participation.checked_in_by = test_staff.id
-            
-            # Complete
-            participation.status = ParticipationStatus.COMPLETED
-            participation.completed_at = datetime.now(timezone.utc)
+            db_session.add(participation)
             
             await db_session.commit()
         
@@ -458,23 +455,21 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
     
     # Create participations with different completion counts
     # Students: 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 completions
-    # Use all 5 events, cycling through them for more completions
     for idx, student in enumerate(test_students):
         num_completions = NUM_STUDENTS - idx
         
-        # Create enough events if needed
-        events_to_use = []
         for i in range(num_completions):
-            events_to_use.append(test_events[i % len(test_events)])
-        
-        for i, event_to_use in enumerate(events_to_use):
-            participation_data = EventParticipationCreate(
-                event_id=event_to_use.id
-            )
-            participation = await create_participation(db_session, participation_data, student.id)
+            event_to_use = test_events[i % len(test_events)]
             
-            participation.status = ParticipationStatus.COMPLETED
-            participation.completed_at = now - timedelta(hours=num_completions - i)
+            # Create participation directly (bypass duplicate check for testing)
+            participation = EventParticipation(
+                user_id=student.id,
+                event_id=event_to_use.id,
+                status=ParticipationStatus.COMPLETED,
+                joined_at=datetime.now(timezone.utc),
+                completed_at=now - timedelta(hours=num_completions - i)
+            )
+            db_session.add(participation)
             await db_session.commit()
             
             # Update leaderboard entry after each completion
@@ -608,7 +603,15 @@ async def test_leaderboard_rewards(db_session, test_staff, test_students, test_e
         result = await db_session.execute(stmt)
         user = result.scalar_one_or_none()
         
-        reward_name = entry.reward_name or "No reward"
+        # Get reward name from Reward model if reward_id exists
+        reward_name = "No reward"
+        if entry.reward_id:
+            reward_stmt = select(Reward).where(Reward.id == entry.reward_id)
+            reward_result = await db_session.execute(reward_stmt)
+            reward = reward_result.scalar_one_or_none()
+            if reward:
+                reward_name = reward.name
+        
         print(f"   Rank {entry.rank}: {user.first_name} - "
               f"Reward: {reward_name}")
     
