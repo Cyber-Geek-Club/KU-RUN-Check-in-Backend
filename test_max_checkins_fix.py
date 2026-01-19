@@ -12,7 +12,7 @@ from sqlalchemy import select, and_, func
 from src.database.db_config import SessionLocal
 from src.models.event import Event, EventType
 from src.models.event_participation import EventParticipation, ParticipationStatus
-from src.crud.event_participation_crud import check_daily_registration_limit
+from src.crud.event_participation_crud import check_daily_registration_limit, pre_register_for_multi_day_event
 
 
 async def test_max_checkins_counting():
@@ -221,6 +221,94 @@ async def simulate_scenario():
             traceback.print_exc()
 
 
+async def test_pre_register_logic():
+    """
+    🧪 ทดสอบฟังก์ชัน pre_register ที่ต้องยอมรับ multiple registrations
+    """
+    print("\n" + "="*60)
+    print("🧪 Testing pre_register logic with max_checkins_per_user...")
+    print("="*60)
+    print()
+    
+    async with SessionLocal() as db:
+        try:
+            user_id = 1
+            event_id = 5
+            
+            # ดึงข้อมูล event
+            event_result = await db.execute(select(Event).where(Event.id == event_id))
+            event = event_result.scalar_one_or_none()
+            
+            if not event:
+                print("❌ Event not found")
+                return
+            
+            print(f"📅 Event: {event.title}")
+            print(f"   Max check-ins per user: {event.max_checkins_per_user}")
+            print()
+            
+            # นับจำนวนที่ลงทะเบียนไปแล้ว
+            count_result = await db.execute(
+                select(func.count(EventParticipation.id))
+                .where(
+                    EventParticipation.user_id == user_id,
+                    EventParticipation.event_id == event_id,
+                    EventParticipation.status != ParticipationStatus.CANCELLED
+                )
+            )
+            current_count = count_result.scalar() or 0
+            
+            print(f"📊 Current registrations: {current_count}/{event.max_checkins_per_user}")
+            print()
+            
+            # ทดสอบ pre-register
+            for i in range(1, 6):  # พยายามลงทะเบียน 5 ครั้ง
+                print(f"🔄 Attempt {i}: ", end="")
+                
+                try:
+                    result = await pre_register_for_multi_day_event(db, user_id, event_id)
+                    print(f"✅ SUCCESS - {result['message']}")
+                    print(f"   Code: {result['first_code']}, Date: {result['first_date']}")
+                    
+                    # รอให้ date เปลี่ยน (simulate)
+                    import asyncio
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    if "ลงทะเบียนครบ" in str(e):
+                        print(f"⚠️ BLOCKED - {str(e)}")
+                        print(f"   ✅ This is CORRECT behavior")
+                    elif "ลงทะเบียนวันนี้แล้ว" in str(e):
+                        print(f"⚠️ BLOCKED - {str(e)}")
+                        print(f"   ✅ This is CORRECT (same day)")
+                    else:
+                        print(f"❌ ERROR - {str(e)}")
+                    break
+            
+            print()
+            
+            # แสดงสรุป
+            final_count_result = await db.execute(
+                select(func.count(EventParticipation.id))
+                .where(
+                    EventParticipation.user_id == user_id,
+                    EventParticipation.event_id == event_id,
+                    EventParticipation.status != ParticipationStatus.CANCELLED
+                )
+            )
+            final_count = final_count_result.scalar() or 0
+            
+            print(f"📊 Final registrations: {final_count}/{event.max_checkins_per_user}")
+            
+            if event.max_checkins_per_user and final_count >= event.max_checkins_per_user:
+                print(f"✅ System correctly blocked after reaching limit")
+            
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+
 async def main():
     print("="*60)
     print("🔧 Testing max_checkins_per_user Fix")
@@ -229,6 +317,7 @@ async def main():
     
     await test_max_checkins_counting()
     await simulate_scenario()
+    await test_pre_register_logic()
     
     print()
     print("="*60)

@@ -984,28 +984,47 @@ async def pre_register_for_multi_day_event(
             detail="กิจกรรมนี้ไม่รองรับการลงทะเบียนล่วงหน้า"
         )
 
-    existing = await db.execute(
+    # ใช้วันที่ปัจจุบันแบบ UTC
+    today = datetime.now(timezone.utc).date()
+    event_start = event.event_date.date()
+    event_end = event.event_end_date.date() if event.event_end_date else event_start
+
+    # ตรวจสอบว่าวันนี้มีรหัสแล้วหรือยัง
+    today_check = await db.execute(
         select(EventParticipation)
         .where(
             and_(
                 EventParticipation.user_id == user_id,
                 EventParticipation.event_id == event_id,
+                EventParticipation.checkin_date == today,
                 EventParticipation.status != ParticipationStatus.CANCELLED
             )
         )
-        .limit(1)
     )
 
-    if existing.scalar_one_or_none():
+    if today_check.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="คุณได้ลงทะเบียนกิจกรรมนี้แล้ว"
+            detail=f"คุณได้ลงทะเบียนวันนี้แล้ว (วันที่ {today})"
         )
 
-    # ใช้วันที่ปัจจุบันแบบ UTC
-    today = datetime.now(timezone.utc).date()
-    event_start = event.event_date.date()
-    event_end = event.event_end_date.date() if event.event_end_date else event_start
+    # ตรวจสอบจำนวนครั้งทั้งหมด (ถ้ามี limit)
+    if event.max_checkins_per_user:
+        total_count_result = await db.execute(
+            select(func.count(EventParticipation.id))
+            .where(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status != ParticipationStatus.CANCELLED
+            )
+        )
+        total_count = total_count_result.scalar() or 0
+
+        if total_count >= event.max_checkins_per_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"คุณลงทะเบียนครบ {event.max_checkins_per_user} ครั้งแล้ว"
+            )
 
     if today > event_end:
         raise HTTPException(
