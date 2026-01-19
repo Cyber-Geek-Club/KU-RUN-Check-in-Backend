@@ -76,7 +76,7 @@ async def create_snapshot(
             snapshot_id=snapshot.id,
             participation_id=p.id,
             user_id=p.user_id,
-            user_name=p.user.full_name if p.user else "Unknown",
+            user_name=f"{p.user.first_name} {p.user.last_name}" if p.user else "Unknown",
             user_email=p.user.email if p.user else None,
             action=p.status.value if hasattr(p.status, 'value') else p.status,
             status=p.status.value if hasattr(p.status, 'value') else p.status,
