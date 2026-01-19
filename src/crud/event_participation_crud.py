@@ -692,16 +692,14 @@ async def check_daily_registration_limit(
         }
 
     # 3. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
+    # นับทุกรหัสที่สร้างไว้แล้ว (รวมทั้ง JOINED, CHECKED_IN, EXPIRED, COMPLETED)
     if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
         total_checkins_result = await db.execute(
             select(func.count(EventParticipation.id))
             .where(
                 EventParticipation.user_id == user_id,
                 EventParticipation.event_id == event_id,
-                EventParticipation.status.in_([
-                    ParticipationStatus.CHECKED_IN,
-                    ParticipationStatus.COMPLETED
-                ])
+                EventParticipation.status != ParticipationStatus.CANCELLED
             )
         )
         total_checkins = total_checkins_result.scalar() or 0
@@ -709,7 +707,7 @@ async def check_daily_registration_limit(
         if total_checkins >= event.max_checkins_per_user:
             return {
                 "can_register": False,
-                "reason": f"คุณ check-in ครบ {event.max_checkins_per_user} ครั้งแล้ว",
+                "reason": f"คุณสร้างรหัสครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
                 "today_registration": None,
                 "total_checkins": total_checkins
             }

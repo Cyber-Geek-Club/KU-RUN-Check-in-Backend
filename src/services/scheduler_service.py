@@ -92,24 +92,21 @@ async def auto_unlock_daily_codes():
                     if existing_check.scalar_one_or_none():
                         continue  # มีรหัสวันนี้แล้ว
                     
-                    # เช็คจำนวนครั้งทั้งหมด
+                    # เช็คจำนวนครั้งทั้งหมด (นับทุกรหัสที่สร้างไว้ รวมทั้ง JOINED และ EXPIRED)
                     if event.max_checkins_per_user:
                         total_checkins_result = await db.execute(
                             select(EventParticipation).where(
                                 and_(
                                     EventParticipation.user_id == user_id,
                                     EventParticipation.event_id == event.id,
-                                    EventParticipation.status.in_([
-                                        ParticipationStatus.CHECKED_IN,
-                                        ParticipationStatus.COMPLETED
-                                    ])
+                                    EventParticipation.status != ParticipationStatus.CANCELLED
                                 )
                             )
                         )
                         total_checkins = len(total_checkins_result.scalars().all())
                         
                         if total_checkins >= event.max_checkins_per_user:
-                            continue  # เช็คอินครบแล้ว
+                            continue  # สร้างรหัสครบจำนวนแล้ว
                     
                     # สร้างรหัสใหม่
                     from src.crud.event_participation_crud import generate_join_code, get_participation_by_join_code
