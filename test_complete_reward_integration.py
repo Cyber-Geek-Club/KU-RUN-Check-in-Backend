@@ -277,10 +277,6 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
     print("TEST 1: REWARD SYSTEM")
     print("="*60)
     
-    # Student 1: วิ่ง 3 ครั้ง -> ควรได้ Bronze
-    # Student 2: วิ่ง 5 ครั้ง -> ควรได้ Bronze, Silver
-    # Student 3: วิ่ง 10 ครั้ง -> ควรได้ Bronze, Silver, Gold
-    
     test_cases = [
         (test_students[0], 3, ["🥉 Bronze Runner"]),
         (test_students[1], 5, ["🥉 Bronze Runner", "🥈 Silver Runner"]),
@@ -294,12 +290,12 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
         for i in range(num_completions):
             event = test_events[i % len(test_events)]
             
-            # Create participation directly (bypass duplicate check for testing)
+            # FIXED: Shortened codes to max 5 chars (e.g., J0001, C0001)
             participation = EventParticipation(
                 user_id=student.id,
                 event_id=event.id,
-                join_code=f"TEST{i:05d}",  # Generate unique join code
-                completion_code=f"COMP{i:05d}",  # Generate unique completion code
+                join_code=f"J{i:04d}", 
+                completion_code=f"C{i:04d}",
                 status=ParticipationStatus.COMPLETED,
                 joined_at=datetime.now(timezone.utc),
                 checked_in_at=datetime.now(timezone.utc),
@@ -353,7 +349,6 @@ async def test_reward_time_period(db_session, test_staff, test_students, test_ev
     print("="*60)
     
     student = test_students[0]
-    bronze_reward = test_rewards[0]  # Required: 3 completions in 30 days
     
     # Create 3 participations within 30 days
     now = datetime.now(timezone.utc)
@@ -463,12 +458,13 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
         for i in range(num_completions):
             event_to_use = test_events[i % len(test_events)]
             
-            # Create participation directly (bypass duplicate check for testing)
+            # FIXED: Shortened codes to max 5 chars (e.g., L0102, C0102)
+            # idx is 0-9 (1 digit), i is 0-10 (up to 2 digits)
             participation = EventParticipation(
                 user_id=student.id,
                 event_id=event_to_use.id,
-                join_code=f"LB{idx:02d}{i:03d}",  # LB01001, LB01002, etc.
-                completion_code=f"CMP{idx:02d}{i:03d}",
+                join_code=f"L{idx}{i:02d}",  # L + 1 digit + 2 digits = 4 chars
+                completion_code=f"C{idx}{i:02d}", # C + 1 digit + 2 digits = 4 chars
                 status=ParticipationStatus.COMPLETED,
                 joined_at=datetime.now(timezone.utc),
                 completed_at=now - timedelta(hours=num_completions - i)
@@ -698,7 +694,6 @@ async def test_duplicate_reward_prevention(db_session, test_staff, test_students
     print("="*60)
     
     student = test_students[0]
-    bronze_reward = test_rewards[0]
     
     # Create 3 participations
     now = datetime.now(timezone.utc)
