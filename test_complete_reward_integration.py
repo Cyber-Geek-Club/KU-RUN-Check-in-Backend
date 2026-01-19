@@ -138,8 +138,9 @@ async def db_session(db_engine):
         try:
             yield session
         finally:
-            # Always rollback after test to ensure isolation
-            await transaction.rollback()
+            # Rollback only if transaction is still active
+            if transaction.is_active:
+                await transaction.rollback()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -295,10 +296,9 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
             
             # Create participation
             participation_data = EventParticipationCreate(
-                user_id=student.id,
                 event_id=event.id
             )
-            participation = await create_participation(db_session, participation_data)
+            participation = await create_participation(db_session, participation_data, student.id)
             
             # Check-in (simulate staff checking in)
             participation.status = ParticipationStatus.CHECKED_IN
@@ -358,10 +358,9 @@ async def test_reward_time_period(db_session, test_staff, test_students, test_ev
         event = test_events[i]
         
         participation_data = EventParticipationCreate(
-            user_id=student.id,
             event_id=event.id
         )
-        participation = await create_participation(db_session, participation_data)
+        participation = await create_participation(db_session, participation_data, student.id)
         
         # Complete within time period
         participation.status = ParticipationStatus.COMPLETED
@@ -456,10 +455,9 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
             event_to_use = test_events[i % len(test_events)]
             
             participation_data = EventParticipationCreate(
-                user_id=student.id,
                 event_id=event_to_use.id
             )
-            participation = await create_participation(db_session, participation_data)
+            participation = await create_participation(db_session, participation_data, student.id)
             
             participation.status = ParticipationStatus.COMPLETED
             participation.completed_at = now - timedelta(hours=num_completions - i)
@@ -559,10 +557,9 @@ async def test_leaderboard_rewards(db_session, test_staff, test_students, test_e
             event_to_use = test_events[i % len(test_events)]
             
             participation_data = EventParticipationCreate(
-                user_id=student.id,
                 event_id=event_to_use.id
             )
-            participation = await create_participation(db_session, participation_data)
+            participation = await create_participation(db_session, participation_data, student.id)
             
             participation.status = ParticipationStatus.COMPLETED
             participation.completed_at = now - timedelta(hours=num_completions - i)
@@ -629,10 +626,9 @@ async def test_leaderboard_points_calculation(db_session, test_staff, test_stude
         event = test_events[i]
         
         participation_data = EventParticipationCreate(
-            user_id=student.id,
             event_id=event.id
         )
-        participation = await create_participation(db_session, participation_data)
+        participation = await create_participation(db_session, participation_data, student.id)
         
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_at = now - timedelta(hours=i)
@@ -683,10 +679,9 @@ async def test_duplicate_reward_prevention(db_session, test_staff, test_students
         event = test_events[i]
         
         participation_data = EventParticipationCreate(
-            user_id=student.id,
             event_id=event.id
         )
-        participation = await create_participation(db_session, participation_data)
+        participation = await create_participation(db_session, participation_data, student.id)
         
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_at = now - timedelta(hours=i)
@@ -725,13 +720,25 @@ async def test_leaderboard_finalization(db_session, test_staff, test_students, t
     event = test_events[0]
     now = datetime.now(timezone.utc)
     
+    tiers = [
+        RewardTier(
+            tier=1,
+            min_rank=1,
+            max_rank=5,
+            reward_id=test_rewards[0].id,
+            reward_name=test_rewards[0].name,
+            quantity=5,
+            required_completions=1
+        ),
+    ]
+    
     config_data = LeaderboardConfigCreate(
         event_id=event.id,
         name="Test Finalization",
         description="ทดสอบการ Finalize",
         required_completions=1,
         max_reward_recipients=5,
-        reward_tiers=[],
+        reward_tiers=tiers,
         starts_at=now - timedelta(days=1),
         ends_at=now + timedelta(days=30)
     )
