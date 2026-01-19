@@ -493,8 +493,8 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
         result = await db_session.execute(stmt)
         user = result.scalar_one_or_none()
         
-          points = entry.total_completions * 100
-          print(f"   Rank {entry.rank}: {user.first_name} - "
+        points = entry.total_completions * 100
+        print(f"   Rank {entry.rank}: {user.first_name} - "
               f"{entry.total_completions} completions - "
               f"{points} points")
     
