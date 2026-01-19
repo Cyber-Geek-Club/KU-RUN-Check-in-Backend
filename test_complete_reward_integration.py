@@ -133,10 +133,13 @@ async def db_session(db_engine):
     )
     
     async with SessionLocal() as session:
-        # Start a transaction
-        async with session.begin():
+        # Start a transaction manually
+        transaction = await session.begin()
+        try:
             yield session
-            # Transaction will be rolled back after test
+        finally:
+            # Always rollback after test to ensure isolation
+            await transaction.rollback()
 
 
 @pytest_asyncio.fixture(scope="function")
