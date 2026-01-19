@@ -283,19 +283,19 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
         (test_students[2], 10, ["🥉 Bronze Runner", "🥈 Silver Runner", "🥇 Gold Runner"]),
     ]
     
-    for student, num_completions, expected_rewards in test_cases:
+    for student_idx, (student, num_completions, expected_rewards) in enumerate(test_cases):
         print(f"\n📝 Testing {student.first_name}: {num_completions} completions")
         
         # Create participations
         for i in range(num_completions):
             event = test_events[i % len(test_events)]
             
-            # FIXED: Shortened codes to max 5 chars (e.g., J0001, C0001)
+            # Unique codes: join_code length=5, completion_code length=10
             participation = EventParticipation(
                 user_id=student.id,
                 event_id=event.id,
-                join_code=f"J{i:04d}", 
-                completion_code=f"C{i:04d}",
+                join_code=f"J{student_idx}{i:03d}",
+                completion_code=f"C{student_idx}{i:08d}",
                 status=ParticipationStatus.COMPLETED,
                 joined_at=datetime.now(timezone.utc),
                 checked_in_at=datetime.now(timezone.utc),
@@ -493,9 +493,10 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
         result = await db_session.execute(stmt)
         user = result.scalar_one_or_none()
         
-        print(f"   Rank {entry.rank}: {user.first_name} - "
+          points = entry.total_completions * 100
+          print(f"   Rank {entry.rank}: {user.first_name} - "
               f"{entry.total_completions} completions - "
-              f"{entry.points} points")
+              f"{points} points")
     
     # Verify rankings
     assert len(entries) == NUM_STUDENTS, f"Expected {NUM_STUDENTS} entries"
