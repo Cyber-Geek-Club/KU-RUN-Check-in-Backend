@@ -21,6 +21,7 @@ Usage:
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
@@ -78,15 +79,7 @@ NUM_EVENTS = 5
 # Pytest Fixtures
 # ============================================
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db_engine():
     """Create database engine for tests"""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
@@ -104,7 +97,7 @@ async def db_engine():
     await engine.dispose()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db_session(db_engine):
     """Create database session for tests"""
     SessionLocal = sessionmaker(
@@ -117,7 +110,7 @@ async def db_session(db_engine):
         yield session
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_staff(db_session):
     """Create test staff user"""
     staff_data = StaffCreate(
@@ -137,7 +130,7 @@ async def test_staff(db_session):
     return staff
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_students(db_session):
     """Create multiple test students"""
     students = []
@@ -166,7 +159,7 @@ async def test_students(db_session):
     return students
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_events(db_session, test_staff):
     """Create multiple test events"""
     events = []
@@ -196,7 +189,7 @@ async def test_events(db_session, test_staff):
     return events
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_rewards(db_session):
     """Create test rewards"""
     rewards_data = [
