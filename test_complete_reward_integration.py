@@ -39,6 +39,8 @@ load_dotenv()
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
+from sqlalchemy import text
+import uuid
 
 # Model imports
 from src.models.base import Base
@@ -74,6 +76,9 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
 NUM_STUDENTS = 10
 NUM_EVENTS = 5
 
+# Generate unique test run ID to avoid conflicts
+TEST_RUN_ID = str(uuid.uuid4())[:8]
+
 
 # ============================================
 # Pytest Fixtures
@@ -82,7 +87,7 @@ NUM_EVENTS = 5
 @pytest_asyncio.fixture(scope="function")
 async def db_engine():
     """Create database engine for tests"""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, pool_pre_ping=True)
     
     # Create all tables
     async with engine.begin() as conn:
@@ -90,16 +95,20 @@ async def db_engine():
     
     yield engine
     
-    # Drop all tables after test
+    # Clean up: Drop all tables with CASCADE
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        # Use CASCADE to handle foreign key constraints
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+        await conn.execute(text("GRANT ALL ON SCHEMA public TO postgres"))
+        await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
     
     await engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session(db_engine):
-    """Create database session for tests"""
+    """Create database session with transaction rollback for tests"""
     SessionLocal = sessionmaker(
         db_engine,
         class_=AsyncSession,
@@ -107,14 +116,17 @@ async def db_session(db_engine):
     )
     
     async with SessionLocal() as session:
-        yield session
+        # Start a transaction
+        async with session.begin():
+            yield session
+            # Transaction will be rolled back after test
 
 
 @pytest_asyncio.fixture(scope="function")
 async def test_staff(db_session):
     """Create test staff user"""
     staff_data = StaffCreate(
-        email=f"staff_test_{int(datetime.now().timestamp())}@ku.th",
+        email=f"staff_test_{TEST_RUN_ID}_{int(datetime.now().timestamp())}@ku.th",
         password="TestPassword123!",
         title="นาย",
         first_name="เจ้าหน้าที่",
@@ -137,12 +149,12 @@ async def test_students(db_session):
     
     for i in range(1, NUM_STUDENTS + 1):
         student_data = StudentCreate(
-            email=f"student{i}_test_{int(datetime.now().timestamp())}@ku.th",
+            email=f"student{i}_test_{TEST_RUN_ID}_{int(datetime.now().timestamp())}@ku.th",
             password="TestPassword123!",
             title="นาย" if i % 2 == 0 else "นางสาว",
             first_name=f"นักศึกษา{i}",
             last_name=f"ทดสอบ{i}",
-            nisit_id=f"66{i:08d}",
+            nisit_id=f"{TEST_RUN_ID}{i:08d}",  # Use TEST_RUN_ID to make unique
             major="วิทยาการคอมพิวเตอร์",
             faculty="วิศวกรรมศาสตร์"
         )
@@ -167,7 +179,7 @@ async def test_events(db_session, test_staff):
     
     for i in range(1, NUM_EVENTS + 1):
         event_data = EventCreate(
-            title=f"KU Run Event #{i}",
+            title=f"KU Run Event {TEST_RUN_ID} #{i}",
             description=f"กิจกรรมวิ่งทดสอบครั้งที่ {i}",
             event_type=EventType.SINGLE_DAY,
             event_date=base_date + timedelta(days=i),
