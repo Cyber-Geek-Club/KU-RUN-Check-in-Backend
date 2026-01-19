@@ -167,3 +167,5 @@ wrapt==2.0.1
 zope.interface==8.1.1
 APScheduler==3.10.4
 httpx
+pytest 
+pytest-asyncio
