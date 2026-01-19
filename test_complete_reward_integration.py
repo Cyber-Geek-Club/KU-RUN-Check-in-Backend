@@ -312,7 +312,12 @@ async def test_reward_system(db_session, test_staff, test_students, test_events,
             await db_session.commit()
         
         # Check rewards
-        user_rewards = await reward_crud.check_and_award_rewards(db_session, student.id)
+        await reward_crud.check_and_award_rewards(db_session, student.id)
+        
+        # Query user rewards after awarding
+        stmt = select(UserReward).where(UserReward.user_id == student.id)
+        result = await db_session.execute(stmt)
+        user_rewards = result.scalars().all()
         
         print(f"   Expected: {len(expected_rewards)} rewards")
         print(f"   Got: {len(user_rewards)} rewards")
@@ -369,7 +374,12 @@ async def test_reward_time_period(db_session, test_staff, test_students, test_ev
     await db_session.commit()
     
     # Check rewards
-    user_rewards = await reward_crud.check_and_award_rewards(db_session, student.id)
+    await reward_crud.check_and_award_rewards(db_session, student.id)
+    
+    # Query user rewards
+    stmt = select(UserReward).where(UserReward.user_id == student.id)
+    result = await db_session.execute(stmt)
+    user_rewards = result.scalars().all()
     
     print(f"   ✓ Completed 3 times within 30 days")
     print(f"   ✓ Earned {len(user_rewards)} reward(s)")
@@ -448,12 +458,16 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
     
     # Create participations with different completion counts
     # Students: 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 completions
+    # Use all 5 events, cycling through them for more completions
     for idx, student in enumerate(test_students):
         num_completions = NUM_STUDENTS - idx
         
+        # Create enough events if needed
+        events_to_use = []
         for i in range(num_completions):
-            event_to_use = test_events[i % len(test_events)]
-            
+            events_to_use.append(test_events[i % len(test_events)])
+        
+        for i, event_to_use in enumerate(events_to_use):
             participation_data = EventParticipationCreate(
                 event_id=event_to_use.id
             )
@@ -461,12 +475,17 @@ async def test_leaderboard_system(db_session, test_staff, test_students, test_ev
             
             participation.status = ParticipationStatus.COMPLETED
             participation.completed_at = now - timedelta(hours=num_completions - i)
+            await db_session.commit()
             
-        await db_session.commit()
+            # Update leaderboard entry after each completion
+            await reward_lb_crud.update_entry_progress(
+                db_session, config.id, student.id, event_to_use.id
+            )
+        
         print(f"   ✓ Student {idx+1}: {num_completions} completions")
     
-    # Update leaderboard
-    await reward_lb_crud.update_leaderboard(db_session, config.id)
+    # Calculate rankings and allocate rewards
+    await reward_lb_crud.calculate_and_allocate_rewards(db_session, config.id)
     
     # Get leaderboard entries
     entries = await reward_lb_crud.get_leaderboard_entries(
@@ -563,16 +582,18 @@ async def test_leaderboard_rewards(db_session, test_staff, test_students, test_e
             
             participation.status = ParticipationStatus.COMPLETED
             participation.completed_at = now - timedelta(hours=num_completions - i)
+            await db_session.commit()
+            
+            # Update leaderboard entry
+            await reward_lb_crud.update_entry_progress(
+                db_session, config.id, student.id, event_to_use.id
+            )
         
         await db_session.commit()
     
-    # Update leaderboard
-    await reward_lb_crud.update_leaderboard(db_session, config.id)
-    
-    # Distribute rewards
-    distributed = await reward_lb_crud.distribute_leaderboard_rewards(
-        db_session, config.id
-    )
+    # Calculate rankings and allocate rewards
+    stats = await reward_lb_crud.calculate_and_allocate_rewards(db_session, config.id)
+    distributed = stats.get('awarded', 0)
     
     print(f"\n   🏆 Rewards Distribution:")
     print(f"   Total distributed: {distributed} rewards")
@@ -689,16 +710,26 @@ async def test_duplicate_reward_prevention(db_session, test_staff, test_students
     await db_session.commit()
     
     # Award rewards twice
-    user_rewards_1 = await reward_crud.check_and_award_rewards(db_session, student.id)
-    user_rewards_2 = await reward_crud.check_and_award_rewards(db_session, student.id)
+    await reward_crud.check_and_award_rewards(db_session, student.id)
+    
+    # Query after first award
+    stmt = select(UserReward).where(UserReward.user_id == student.id)
+    result = await db_session.execute(stmt)
+    user_rewards_1 = result.scalars().all()
+    
+    # Try to award again
+    await reward_crud.check_and_award_rewards(db_session, student.id)
+    
+    # Query after second award
+    stmt = select(UserReward).where(UserReward.user_id == student.id)
+    result = await db_session.execute(stmt)
+    user_rewards_2 = result.scalars().all()
     
     print(f"   ✓ First check: {len(user_rewards_1)} reward(s)")
     print(f"   ✓ Second check: {len(user_rewards_2)} reward(s)")
     
     # Get all user rewards
-    stmt = select(UserReward).where(UserReward.user_id == student.id)
-    result = await db_session.execute(stmt)
-    all_rewards = result.scalars().all()
+    all_rewards = user_rewards_2
     
     print(f"   ✓ Total rewards in DB: {len(all_rewards)}")
     
