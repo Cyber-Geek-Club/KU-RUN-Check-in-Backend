@@ -1,13 +1,14 @@
 """
 ⏰ Scheduler Service - Auto unlock/lock for Multi-day Events
-Handles automatic daily code generation and expiration
+Handles automatic daily code generation and expiration with strict daily reset logic.
 """
 import logging
 from datetime import datetime, date, timezone, timedelta
+import pytz  # เพิ่มการจัดการ Timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, not_, or_
 from src.database.db_config import SessionLocal
 from src.models.event import Event, EventType
 from src.models.event_participation import EventParticipation, ParticipationStatus
@@ -17,68 +18,135 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
+# ✅ กำหนด Timezone สำหรับประเทศไทย
+BANGKOK_TZ = pytz.timezone('Asia/Bangkok')
 
-async def auto_unlock_daily_codes():
+
+async def auto_expire_unused_codes():
     """
-    🔓 Auto-unlock: สร้างรหัส join_code ใหม่ให้ผู้ที่ลงทะเบียนล่วงหน้าไว้
-    รันทุกวันเวลา 00:00 น.
+    🔒 Auto-expire: เปลี่ยนสถานะทุกรายการที่ยังไม่สำเร็จให้เป็น EXPIRED
+    
+    Time: รันทุกวันเวลา 23:59 น. (Asia/Bangkok)
+    Scope: รายการของ 'วันนี้' ที่ยังไม่เสร็จสิ้น
+    States to expire: JOINED, CHECKED_IN, PROOF_SUBMITTED, CHECKED_OUT
+    States to keep: COMPLETED, CANCELLED, EXPIRED (already)
     """
-    logger.info("🔓 Starting auto-unlock for multi-day events...")
+    # 1. Get today's date in Bangkok time
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    logger.info(f"🔒 Starting auto-expire for date: {today} (Time: {now_bkk.strftime('%H:%M:%S')})")
     
     async with SessionLocal() as db:
         try:
-            today = date.today()
+            # 2. Query participations with status NOT IN (COMPLETED, CANCELLED, EXPIRED)
+            # เราเลือกเฉพาะรายการของวันนี้ (หรือเก่ากว่าที่อาจหลุดรอด) ที่ยังค้างสถานะอยู่
+            query = select(EventParticipation).where(
+                and_(
+                    # เช็คว่าเป็นรายการของวันนี้ (หรือก่อนหน้า)
+                    EventParticipation.checkin_date <= today,
+                    # สถานะที่ต้อง Expire (ยังไม่จบและยังไม่ยกเลิก)
+                    not_(EventParticipation.status.in_([
+                        ParticipationStatus.COMPLETED,
+                        ParticipationStatus.CANCELLED,
+                        ParticipationStatus.EXPIRED,
+                        ParticipationStatus.REJECTED # ขึ้นกับ Policy ว่า Rejected ถือว่าจบไหม ถ้าจบแล้วก็ไม่ต้อง Expire
+                    ]))
+                )
+            )
             
+            result = await db.execute(query)
+            pending_participations = result.scalars().all()
+            
+            if not pending_participations:
+                logger.info("   ℹ️ No pending participations to expire.")
+                return
+            
+            logger.info(f"   📋 Found {len(pending_participations)} participations to expire.")
+            
+            # 3. Update status to EXPIRED
+            expire_count = 0
+            for p in pending_participations:
+                old_status = p.status
+                p.status = ParticipationStatus.EXPIRED
+                # อัปเดตเวลาเพื่อให้รู้ว่าระบบจัดการเมื่อไหร่ (ใช้ UTC ใน DB)
+                p.updated_at = datetime.now(timezone.utc)
+                
+                expire_count += 1
+                logger.debug(f"      - Expiring: User {p.user_id} | Event {p.event_id} | {old_status} -> EXPIRED")
+            
+            await db.commit()
+            logger.info(f"   ✅ Successfully expired {expire_count} participations.")
+            logger.info("🔒 Auto-expire completed successfully.")
+            
+        except Exception as e:
+            logger.error(f"❌ Auto-expire failed: {str(e)}")
+            await db.rollback()
+
+
+async def auto_unlock_daily_codes():
+    """
+    🔓 Auto-unlock: สร้างรหัสใหม่สำหรับ Multi-day Events
+    
+    Time: รันทุกวันเวลา 00:00 น. (Asia/Bangkok)
+    Conditions:
+    - User must be pre-registered (เคยเข้าร่วมกิจกรรมนี้มาก่อน)
+    - User must NOT have today's participation yet.
+    - User must NOT exceed max_checkins_per_user (EXCLUDING EXPIRED records).
+    """
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    logger.info(f"🔓 Starting auto-unlock for date: {today} (Time: {now_bkk.strftime('%H:%M:%S')})")
+    
+    async with SessionLocal() as db:
+        try:
             # หา multi-day events ที่กำลังดำเนินการอยู่
+            # หมายเหตุ: เปรียบเทียบ date กับ datetime ใน DB ต้องระวัง type mismatch
+            # Query นี้หา Event ที่ Active และอยู่ในช่วงเวลา
             result = await db.execute(
                 select(Event).where(
                     and_(
                         Event.event_type == EventType.MULTI_DAY,
                         Event.is_active == True,
-                        Event.is_published == True,
-                        Event.event_date <= datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc),
-                        Event.event_end_date >= datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+                        Event.is_published == True
                     )
                 )
             )
-            active_events = result.scalars().all()
+            events = result.scalars().all()
+            
+            # กรอง Event ที่วันนี้อยู่ในช่วงเวลา (ทำใน Python เพื่อลดความซับซ้อนของ Timezone ใน SQL Query)
+            active_events = []
+            for event in events:
+                start_date = event.event_date.date()
+                end_date = event.event_end_date.date() if event.event_end_date else start_date
+                if start_date <= today <= end_date:
+                    active_events.append(event)
             
             if not active_events:
-                logger.info("   ℹ️ No active multi-day events found")
+                logger.info("   ℹ️ No active multi-day events for today.")
                 return
             
-            logger.info(f"   📅 Found {len(active_events)} active multi-day events")
+            logger.info(f"   📅 Found {len(active_events)} active events.")
             
             for event in active_events:
-                # หาผู้ใช้ที่ลงทะเบียนกิจกรรมนี้แล้ว (pre-registered)
+                # หาผู้ใช้ที่เคยลงทะเบียนกิจกรรมนี้ (Pre-registered)
                 users_result = await db.execute(
                     select(EventParticipation.user_id)
-                    .where(
-                        and_(
-                            EventParticipation.event_id == event.id,
-                            EventParticipation.status.in_([
-                                ParticipationStatus.JOINED,
-                                ParticipationStatus.CHECKED_IN,
-                                ParticipationStatus.CHECKED_OUT,
-                                ParticipationStatus.COMPLETED
-                            ])
-                        )
-                    )
+                    .where(EventParticipation.event_id == event.id)
                     .distinct()
                 )
                 registered_user_ids = [row[0] for row in users_result.fetchall()]
                 
-                if not registered_user_ids:
-                    logger.info(f"   ℹ️ Event '{event.title}': No registered users")
-                    continue
-                
-                logger.info(f"   🎯 Event '{event.title}': Processing {len(registered_user_ids)} users")
+                logger.info(f"   🎯 Event '{event.title}': Checking {len(registered_user_ids)} candidates.")
                 
                 codes_created = 0
                 
                 for user_id in registered_user_ids:
-                    # เช็คว่าวันนี้มีรหัสแล้วหรือยัง
-                    existing_check = await db.execute(
+                    # 1. Check if user already has TODAY'S participation
+                    # ต้องไม่นับ EXPIRED ของเมื่อวาน แต่ถ้ารายการของ 'วันนี้' เป็น EXPIRED (ซึ่งไม่น่าเกิดตอน 00:00) ก็ถือว่ามีแล้ว
+                    # เราเช็คแค่ checkin_date == today และ status != CANCELLED
+                    existing_today = await db.execute(
                         select(EventParticipation).where(
                             and_(
                                 EventParticipation.user_id == user_id,
@@ -89,39 +157,36 @@ async def auto_unlock_daily_codes():
                         )
                     )
                     
-                    if existing_check.scalar_one_or_none():
-                        continue  # มีรหัสวันนี้แล้ว
+                    if existing_today.scalar_one_or_none():
+                        continue  # มีของวันนี้แล้ว (อาจจะสร้างเองหรือระบบสร้างให้แล้ว)
                     
-                    # เช็คจำนวนครั้งทั้งหมด (นับทุกรหัสที่สร้างไว้ รวมทั้ง JOINED และ EXPIRED)
+                    # 2. Check Quota (Max Check-ins)
+                    # ⚠️ กฎ: ไม่นับ EXPIRED แต่รวม CANCELLED (ตามนโยบาย)
                     if event.max_checkins_per_user:
-                        total_checkins_result = await db.execute(
-                            select(EventParticipation).where(
-                                and_(
-                                    EventParticipation.user_id == user_id,
-                                    EventParticipation.event_id == event.id,
-                                    EventParticipation.status != ParticipationStatus.CANCELLED
-                                )
+                        quota_query = select(func.count(EventParticipation.id)).where(
+                            and_(
+                                EventParticipation.user_id == user_id,
+                                EventParticipation.event_id == event.id,
+                                EventParticipation.status != ParticipationStatus.EXPIRED # 🔑 Key Logic: Exclude EXPIRED
                             )
                         )
-                        total_checkins = len(total_checkins_result.scalars().all())
+                        quota_result = await db.execute(quota_query)
+                        total_usage = quota_result.scalar() or 0
                         
-                        if total_checkins >= event.max_checkins_per_user:
-                            continue  # สร้างรหัสครบจำนวนแล้ว
+                        if total_usage >= event.max_checkins_per_user:
+                            # โควตาเต็มแล้ว (รวม Cancelled แล้ว)
+                            continue
                     
-                    # สร้างรหัสใหม่
+                    # 3. Create New Participation
                     from src.crud.event_participation_crud import generate_join_code, get_participation_by_join_code
                     
                     join_code = generate_join_code()
                     while await get_participation_by_join_code(db, join_code):
                         join_code = generate_join_code()
                     
-                    # กำหนดเวลาหมดอายุ (เที่ยงคืนของวันนี้)
-                    code_expires_at = datetime.combine(
-                        today,
-                        datetime.max.time()
-                    ).replace(tzinfo=timezone.utc)
+                    # หมดอายุตอนสิ้นวันของ 'วันนี้'
+                    code_expires_at = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
                     
-                    # สร้าง participation ใหม่
                     new_participation = EventParticipation(
                         user_id=user_id,
                         event_id=event.id,
@@ -129,101 +194,55 @@ async def auto_unlock_daily_codes():
                         status=ParticipationStatus.JOINED,
                         checkin_date=today,
                         code_used=False,
-                        code_expires_at=code_expires_at
+                        code_expires_at=code_expires_at,
+                        joined_at=datetime.now(timezone.utc)
                     )
                     
                     db.add(new_participation)
                     codes_created += 1
                 
                 await db.commit()
-                logger.info(f"   ✅ Event '{event.title}': Created {codes_created} new codes")
+                logger.info(f"   ✅ Event '{event.title}': Created {codes_created} new codes.")
             
-            logger.info("🔓 Auto-unlock completed successfully")
+            logger.info("🔓 Auto-unlock completed successfully.")
             
         except Exception as e:
             logger.error(f"❌ Auto-unlock failed: {str(e)}")
             await db.rollback()
 
 
-async def auto_expire_unused_codes():
-    """
-    🔒 Auto-lock: ทำให้รหัสที่ไม่ได้ใช้หมดอายุ
-    รันทุกวันเวลา 23:59 น.
-    """
-    logger.info("🔒 Starting auto-expire for unused codes...")
-    
-    async with SessionLocal() as db:
-        try:
-            now = datetime.now(timezone.utc)
-            
-            # หารหัสที่หมดอายุแล้วแต่ยังไม่ได้เปลี่ยนสถานะ
-            result = await db.execute(
-                select(EventParticipation).where(
-                    and_(
-                        EventParticipation.status == ParticipationStatus.JOINED,
-                        EventParticipation.code_used == False,
-                        EventParticipation.code_expires_at <= now
-                    )
-                )
-            )
-            expired_participations = result.scalars().all()
-            
-            if not expired_participations:
-                logger.info("   ℹ️ No codes to expire")
-                return
-            
-            logger.info(f"   ⏰ Found {len(expired_participations)} expired codes")
-            
-            # เปลี่ยนสถานะเป็น EXPIRED
-            for participation in expired_participations:
-                participation.status = ParticipationStatus.EXPIRED
-                participation.updated_at = now
-            
-            await db.commit()
-            logger.info(f"   ✅ Expired {len(expired_participations)} unused codes")
-            logger.info("🔒 Auto-expire completed successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Auto-expire failed: {str(e)}")
-            await db.rollback()
-
-
 def start_scheduler():
     """
-    🚀 เริ่มต้น scheduler
+    🚀 เริ่มต้น scheduler โดยใช้ Timezone Asia/Bangkok
     """
     try:
-        # Auto-unlock: รันทุกวันเวลา 00:00 น.
+        # Auto-unlock: รันทุกวันเวลา 00:00 น. (เริ่มวันใหม่)
         scheduler.add_job(
             auto_unlock_daily_codes,
-            CronTrigger(hour=0, minute=0),
+            CronTrigger(hour=0, minute=0, timezone=BANGKOK_TZ),
             id='auto_unlock_daily',
             name='Auto-unlock daily codes',
             replace_existing=True
         )
         
-        # Auto-expire: รันทุกวันเวลา 23:59 น.
+        # Auto-expire: รันทุกวันเวลา 23:59 น. (สิ้นสุดวัน)
         scheduler.add_job(
             auto_expire_unused_codes,
-            CronTrigger(hour=23, minute=59),
+            CronTrigger(hour=23, minute=59, timezone=BANGKOK_TZ),
             id='auto_expire_codes',
             name='Auto-expire unused codes',
             replace_existing=True
         )
         
         scheduler.start()
-        logger.info("⏰ Scheduler started successfully")
+        logger.info("⏰ Scheduler started successfully (Timezone: Asia/Bangkok)")
         logger.info("   🔓 Auto-unlock: Every day at 00:00")
         logger.info("   🔒 Auto-expire: Every day at 23:59")
         
     except Exception as e:
         logger.error(f"❌ Failed to start scheduler: {str(e)}")
 
-
 def shutdown_scheduler():
-    """
-    🛑 ปิด scheduler
-    """
     try:
         if scheduler.running:
             scheduler.shutdown()

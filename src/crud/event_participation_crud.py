@@ -16,7 +16,9 @@ import string
 from fastapi import HTTPException, status
 
 from src.utils.image_hash import are_images_similar, get_hash_similarity_score
+import pytz
 
+BANGKOK_TZ = pytz.timezone('Asia/Bangkok')
 
 def generate_join_code() -> str:
     """Generate unique 5-digit code"""
@@ -604,13 +606,14 @@ async def check_daily_registration_limit(
         event_id: int
 ) -> dict:
     """
-    🔍 ตรวจสอบว่าผู้ใช้สามารถลงทะเบียนวันนี้ได้หรือไม่
-    - ตรวจสอบ Date Range ของกิจกรรม (เริ่ม-จบ)
-    - ตรวจสอบว่าวันนี้ลงทะเบียนไปแล้วหรือยัง (One time per day)
-    - ตรวจสอบจำนวนครั้งสูงสุด (Max check-ins)
+    🔍 ตรวจสอบว่าผู้ใช้สามารถลงทะเบียนวันนี้ได้หรือไม่ (Daily Reset & Auto-Expire Logic)
+    
+    Rules:
+    1. Checkin Date: Must match TODAY (Bangkok Time).
+    2. Daily Limit: User can have only 1 active record per day.
+    3. Max Quota: Check global quota excluding EXPIRED records.
     """
-    # ✅ FIX: ใช้ DateTime จาก Event โดยตรง และแปลงเป็น date
-
+    
     # Get event info
     event_result = await db.execute(select(Event).where(Event.id == event_id))
     event = event_result.scalar_one_or_none()
@@ -621,15 +624,14 @@ async def check_daily_registration_limit(
             detail="Event not found"
         )
 
-    # กำหนดเวลาปัจจุบัน (UTC) เพื่อความถูกต้องและสอดคล้องกับทั้งระบบ
-    now = datetime.now(timezone.utc)
-    today = now.date()
+    # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
 
     # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
     event_start_date = event.event_date.date()
     event_end_date = event.event_end_date.date() if event.event_end_date else event_start_date
 
-    # 1. เช็คว่าวันนี้อยู่ในช่วงเวลากิจกรรมหรือไม่
     if today < event_start_date:
         return {
             "can_register": False,
@@ -646,60 +648,43 @@ async def check_daily_registration_limit(
             "total_checkins": 0
         }
 
-    # ถ้าเป็นกิจกรรมแบบวันเดียว - ใช้ logic เดิม
-    if not hasattr(event, 'event_type') or event.event_type != EventType.MULTI_DAY:
-        existing = await db.execute(
-            select(EventParticipation)
-            .where(
+    # 🆕 Logic สำหรับ Multi-day (และ Single day ก็ใช้ Logic เดียวกันได้เพื่อความ Consistent)
+
+    # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
+    # เราเช็คเฉพาะ checkin_date == today และ status ไม่ใช่ CANCELLED
+    # หมายเหตุ: ถ้า status เป็น EXPIRED (ของวันนี้) ก็ถือว่าลงไปแล้วและหมดสิทธิ์วันนี้
+    today_registration_result = await db.execute(
+        select(EventParticipation)
+        .where(
+            and_(
                 EventParticipation.user_id == user_id,
                 EventParticipation.event_id == event_id,
+                EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
                 EventParticipation.status != ParticipationStatus.CANCELLED
             )
         )
-        if existing.scalar_one_or_none():
-            return {
-                "can_register": False,
-                "reason": "คุณได้ลงทะเบียนกิจกรรมนี้แล้ว",
-                "today_registration": None,
-                "total_checkins": 0
-            }
-        return {
-            "can_register": True,
-            "reason": "สามารถลงทะเบียนได้",
-            "today_registration": None,
-            "total_checkins": 0
-        }
-
-    # 🆕 กิจกรรมแบบหลายวัน (Multi-day)
-
-    # 2. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
-    today_registration = await db.execute(
-        select(EventParticipation)
-        .where(
-            EventParticipation.user_id == user_id,
-            EventParticipation.event_id == event_id,
-            EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
-            EventParticipation.status != ParticipationStatus.CANCELLED
-        )
     )
-    existing_today = today_registration.scalar_one_or_none()
+    existing_today = today_registration_result.scalar_one_or_none()
 
     if existing_today:
         return {
             "can_register": False,
-            "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (รหัส: {existing_today.join_code})",
+            "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (สถานะ: {existing_today.status})",
             "today_registration": existing_today
         }
 
-    # 3. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
-    # นับทุกรหัสที่สร้างไว้แล้ว (รวมทั้ง JOINED, CHECKED_IN, EXPIRED, COMPLETED)
+    # 2. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
+    # ⚠️ กฎ: นับทุกสถานะ ยกเว้น EXPIRED (แต่รวม CANCELLED ตามนโยบาย)
+    total_checkins = 0
     if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
         total_checkins_result = await db.execute(
             select(func.count(EventParticipation.id))
             .where(
-                EventParticipation.user_id == user_id,
-                EventParticipation.event_id == event_id,
-                EventParticipation.status != ParticipationStatus.CANCELLED
+                and_(
+                    EventParticipation.user_id == user_id,
+                    EventParticipation.event_id == event_id,
+                    EventParticipation.status != ParticipationStatus.EXPIRED  # 🔑 Exclude EXPIRED
+                )
             )
         )
         total_checkins = total_checkins_result.scalar() or 0
@@ -707,7 +692,7 @@ async def check_daily_registration_limit(
         if total_checkins >= event.max_checkins_per_user:
             return {
                 "can_register": False,
-                "reason": f"คุณสร้างรหัสครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
+                "reason": f"คุณใช้สิทธิ์ครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
                 "today_registration": None,
                 "total_checkins": total_checkins
             }
@@ -716,9 +701,8 @@ async def check_daily_registration_limit(
         "can_register": True,
         "reason": "สามารถลงทะเบียนวันนี้ได้",
         "today_registration": None,
-        "total_checkins": 0
+        "total_checkins": total_checkins
     }
-
 
 async def create_daily_participation(
         db: AsyncSession,
