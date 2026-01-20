@@ -8,24 +8,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - name: Deploy via SSH
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.SSH_KEY }}
-        port: 22
-        command_timeout: 20m
-        script: |
-          # เข้าไปที่โฟลเดอร์โปรเจกต์
-          cd /path/to/your/project/KU-RUN-Check-in-Backend
-          
-          # ดึงโค้ดล่าสุด
-          git pull origin main
-          
-          # Activate Environment และลง Lib
-          source env/bin/activate
-          pip install -r requirements.txt
-          
-          # Restart Service (แก้บรรทัดนี้ตามชื่อ Service จริงของคุณ)
-          # sudo systemctl restart fastapi-app
+    # ... (steps ก่อนหน้า) ...
+
+    # 1. เพิ่ม Step นี้เข้าไปเพื่อลง Library ที่ขาด
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libkrb5-dev
+
+    # 2. จากนั้นค่อยสั่งลง Python packages ตามเดิม
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
