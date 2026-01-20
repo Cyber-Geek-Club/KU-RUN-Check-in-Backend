@@ -21,3 +21,4 @@ jobs:
           
           # 4. รีสตาร์ท Service (WinSW)
           .\KURunService.exe restart
+          
