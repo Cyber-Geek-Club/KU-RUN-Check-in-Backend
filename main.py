@@ -36,7 +36,7 @@ app = FastAPI(
 allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
 allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
 
-print(f"✅ Allowed CORS origins: {allowed_origins}")  # Debug log
+print(f"[OK] Allowed CORS origins: {allowed_origins}")  # Debug log
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,20 +50,20 @@ app.add_middleware(
 # Initialize database connection
 @app.on_event("startup")
 async def on_startup():
-    logger.info("🚀 Starting KU RUN Check-in API...")
+    logger.info("[OK] Starting KU RUN Check-in API...")
     await init_db()
-    logger.info("✅ Database initialized")
+    logger.info("[OK] Database initialized")
     
     # Start scheduler for auto-unlock/lock
     start_scheduler()
-    logger.info("✅ Scheduler started")
+    logger.info("[OK] Scheduler started")
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    logger.info("🛑 Shutting down KU RUN Check-in API...")
+    logger.info("[STOP] Shutting down KU RUN Check-in API...")
     shutdown_scheduler()
-    logger.info("✅ Scheduler stopped")
+    logger.info("[STOP] Scheduler stopped")
 
 # Health check
 @app.get("/api")
