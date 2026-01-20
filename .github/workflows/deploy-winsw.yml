@@ -1,0 +1,44 @@
+name: Deploy WinSW to Windows Server
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    # สั่งให้รันบนเครื่อง Windows Server ของคุณ
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # ป้องกันปัญหา git permission บน Windows
+          clean: false 
+
+      - name: Deploy and Restart WinSW
+        shell: powershell
+        run: |
+          # 1. กำหนด Path ของโปรเจกต์ (แก้ให้ตรงกับเครื่องคุณ)
+          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend"
+          $SERVICE_EXE = "KURunService.exe"
+
+          Write-Host "Deploying to $PROJECT_PATH..."
+
+          # 2. เข้าไปที่โฟลเดอร์
+          cd $PROJECT_PATH
+
+          # 3. ดึงโค้ดล่าสุด
+          git pull origin main
+
+          # 4. อัปเดต Library (เผื่อมีการแก้ไข requirements.txt)
+          # หมายเหตุ: ถ้า gssapi มีปัญหาบน Windows อาจต้องข้าม หรือหาไฟล์ .whl มาลงเอง
+          .\venv\Scripts\pip install -r requirements.txt
+
+          # 5. รีสตาร์ท WinSW Service
+          Write-Host "Restarting Service..."
+          .\$SERVICE_EXE restart
+
+          # 6. เช็คสถานะ
+          .\$SERVICE_EXE status
+          Write-Host "Deployment Complete!"
