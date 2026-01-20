@@ -169,3 +169,5 @@ APScheduler==3.10.4
 httpx
 pytest 
 pytest-asyncio
+# gssapi==1.10.1          
+# requests-gssapi==1.4.0
