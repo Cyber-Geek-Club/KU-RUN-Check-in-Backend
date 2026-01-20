@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_
 from src.models.reward import Reward, UserReward
 from src.models.event_participation import EventParticipation, ParticipationStatus
+from src.models.event import Event
+from typing import Optional, List
 from src.crud import notification_crud
 from datetime import datetime, timedelta, timezone
 import pytz
@@ -94,23 +96,38 @@ async def check_and_award_rewards(db: AsyncSession, user_id: int):
 
         # 2. นับจำนวนครั้งที่ทำสำเร็จ (Count Success)
         start_date = now_utc - timedelta(days=reward.time_period_days)
-        
-        # ✅ Whitelist: ระบุสถานะที่ยอมรับให้ชัดเจน
+
+        # รวมทั้งกรณีของกิจกรรมแบบรายวัน (daily check-in)
+        # - สำหรับ participation ที่มี completed_at/checked_out_at: ตรวจสอบ datetime
+        # - สำหรับ daily check-in (Event.allow_daily_checkin): ตรวจสอบ EventParticipation.checkin_date (date)
         completed_count_result = await db.execute(
             select(EventParticipation)
+            .join(Event, Event.id == EventParticipation.event_id)
             .where(
                 and_(
                     EventParticipation.user_id == user_id,
-                    EventParticipation.status.in_([
-                        ParticipationStatus.COMPLETED,  # สำเร็จแบบปกติ
-                        ParticipationStatus.CHECKED_OUT # สำเร็จแบบ Check-out
-                    ]),
-                    # ❌ EXPIRED จะไม่ถูกนับ เพราะไม่อยู่ใน list ข้างบน
-                    
-                    # เช็คเวลาจาก field ที่ถูกต้องของแต่ละสถานะ
                     or_(
-                        EventParticipation.completed_at >= start_date,
-                        EventParticipation.checked_out_at >= start_date
+                        # ปกติ: ตรวจสอบ completed_at / checked_out_at
+                        and_(
+                            EventParticipation.status.in_([
+                                ParticipationStatus.COMPLETED,
+                                ParticipationStatus.CHECKED_OUT
+                            ]),
+                            or_(
+                                EventParticipation.completed_at >= start_date,
+                                EventParticipation.checked_out_at >= start_date
+                            )
+                        ),
+                        # กรณี daily check-in ในกิจกรรม multi-day (หรือกิจกรรมที่เปิดให้ daily checkin)
+                        and_(
+                            Event.allow_daily_checkin,
+                            EventParticipation.checkin_date.isnot(None),
+                            EventParticipation.checkin_date >= start_date.date(),
+                            EventParticipation.status.notin_([
+                                ParticipationStatus.CANCELLED,
+                                ParticipationStatus.EXPIRED
+                            ])
+                        )
                     )
                 )
             )
