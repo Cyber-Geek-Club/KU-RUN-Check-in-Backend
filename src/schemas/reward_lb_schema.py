@@ -72,6 +72,7 @@ class LeaderboardConfigCreate(LeaderboardConfigBase):
         return v
 
 
+
 class LeaderboardConfigUpdate(BaseModel):
     """Update leaderboard configuration"""
     name: Optional[str] = Field(None, max_length=255)
