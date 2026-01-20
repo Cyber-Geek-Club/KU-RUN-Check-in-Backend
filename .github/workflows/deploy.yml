@@ -1,4 +1,4 @@
-name: Deploy to Windows VPS
+name: Deploy Frontend to Windows VPS
 
 on:
   push:
@@ -9,46 +9,50 @@ jobs:
     runs-on: self-hosted
     
     steps:
-      - name: Checkout Code
+      - name: Checkout Code (Trigger)
         uses: actions/checkout@v4
         with:
-          clean: false
+          clean: false 
 
-      - name: Deploy Script
+      - name: Deploy Frontend Script
         shell: powershell
         run: |
           # ================= CONFIG =================
-          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend"
-          $SERVICE_EXE = "KURunService.exe"
+   
+          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Frontend"
+          $PM2_NAME = "ku-run-frontend"
           # ==========================================
 
-          Write-Host "Starting Deployment to $PROJECT_PATH..."
+          Write-Host "Starting Frontend Deployment to $PROJECT_PATH..."
 
-          # 1. Go to project directory
-          cd $PROJECT_PATH
+          if (Test-Path $PROJECT_PATH) {
+              cd $PROJECT_PATH
+          } else {
+              Write-Error "Project Path not found: $PROJECT_PATH"
+              exit 1
+          }
 
-          # 2. Pull latest code
           Write-Host "Pulling latest code..."
           git fetch origin master
           
-          # Force reset to match GitHub (Be careful: local changes will be lost)
+
           git reset --hard origin/master
 
-          # 3. Update dependencies
-          if (Test-Path "venv\Scripts\pip.exe") {
-              Write-Host "Installing dependencies..."
-              .\venv\Scripts\pip install -r requirements.txt
-          }
+          Write-Host "Installing dependencies & Building..."
 
-          # 4. Restart Service
-          Write-Host "Restarting Service..."
-          if (Test-Path $SERVICE_EXE) {
-              & ".\$SERVICE_EXE" restart
-              
-              Start-Sleep -Seconds 3
-              & ".\$SERVICE_EXE" status
-          } else {
-              Write-Error "Service file not found: $SERVICE_EXE"
-          }
+          pnpm install --frozen-lockfile
+          pnpm run build
 
-          Write-Host "Deployment Complete!"
+
+          Write-Host "Restarting PM2 Service..."
+  
+          pm2 restart $PM2_NAME -ErrorAction SilentlyContinue
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "Process not running, starting new..."
+              pm2 start build/index.js --name $PM2_NAME
+          }
+          
+
+          pm2 save
+
+          Write-Host "Frontend Deployment Complete!"
