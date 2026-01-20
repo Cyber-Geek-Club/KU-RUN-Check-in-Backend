@@ -2,53 +2,53 @@ name: Deploy to Windows VPS
 
 on:
   push:
-    branches: [ "master" ]  # ทำงานเมื่อ Push เข้า branch main
+    branches: [ "main" ]
 
 jobs:
   deploy:
-    runs-on: self-hosted  # สั่งให้รันบนเครื่อง Server ของคุณที่มี Runner
+    runs-on: self-hosted
     
     steps:
-    - name: Checkout Code (For Log)
-      uses: actions/checkout@v4
-      # ขั้นตอนนี้เพื่อให้หน้าเว็บ GitHub แสดงว่าเรากำลัง Deploy Commit ไหน
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          clean: false
 
-    - name: Deploy Script
-      shell: powershell
-      run: |
-        # ================= CONFIG =================
-        # ระบุ Path โฟลเดอร์โปรเจกต์ของคุณบน Server
-        $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend"
-        $SERVICE_NAME = "KURunService.exe"  # ชื่อไฟล์ WinSW ที่คุณตั้งไว้
-        # ==========================================
+      - name: Deploy Script
+        shell: powershell
+        run: |
+          # ================= CONFIG =================
+          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend"
+          $SERVICE_EXE = "KURunService.exe"
+          # ==========================================
 
-        Write-Host "🚀 Starting Deployment to $PROJECT_PATH..."
+          Write-Host "Starting Deployment to $PROJECT_PATH..."
 
-        # 1. ย้ายไปที่โฟลเดอร์งาน
-        cd $PROJECT_PATH
+          # 1. Go to project directory
+          cd $PROJECT_PATH
 
-        # 2. ดึงโค้ดล่าสุด
-        Write-Host "📥 Pulling latest code..."
-        git fetch origin main
-        git reset --hard origin/main  
-        # ใช้ reset --hard เพื่อบังคับไฟล์ให้ตรงกับ GitHub (ระวัง: ไฟล์ที่แก้สดในเครื่องจะหาย)
-        # ถ้าไม่อยากให้ไฟล์แก้สดหาย ให้ใช้ git pull origin main แทน
+          # 2. Pull latest code
+          Write-Host "Pulling latest code..."
+          git fetch origin main
+          
+          # Force reset to match GitHub (Be careful: local changes will be lost)
+          git reset --hard origin/main
 
-        # 3. อัปเดต Library
-        Write-Host "📦 Installing dependencies..."
-        .\venv\Scripts\pip install -r requirements.txt
+          # 3. Update dependencies
+          if (Test-Path "venv\Scripts\pip.exe") {
+              Write-Host "Installing dependencies..."
+              .\venv\Scripts\pip install -r requirements.txt
+          }
 
-        # 4. รีสตาร์ท Service
-        Write-Host "🔄 Restarting Service..."
-        # ตรวจสอบว่า Service รันอยู่ไหม ถ้าไม่ก็ Start ถ้าใช่ก็ Restart
-        try {
-            & ".\$SERVICE_NAME" restart
-        } catch {
-            Write-Host "⚠️ Service might not be installed or running. Trying to start..."
-            & ".\$SERVICE_NAME" start
-        }
+          # 4. Restart Service
+          Write-Host "Restarting Service..."
+          if (Test-Path $SERVICE_EXE) {
+              & ".\$SERVICE_EXE" restart
+              
+              Start-Sleep -Seconds 3
+              & ".\$SERVICE_EXE" status
+          } else {
+              Write-Error "Service file not found: $SERVICE_EXE"
+          }
 
-        # 5. เช็คสถานะ
-        & ".\$SERVICE_NAME" status
-        Write-Host "✅ Deployment Complete!"
-
+          Write-Host "Deployment Complete!"
