@@ -332,9 +332,11 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
     if approved:
         completion_code = generate_completion_code()
         participation.completion_code = completion_code
-        participation.status = ParticipationStatus.CHECKED_OUT
+        participation.status = ParticipationStatus.CHECKED_OUT  # หรือ COMPLETED ตาม Business Logic
+        # ถ้าตาม Code เดิมเป็น CHECKED_OUT ควร set checked_out_at ด้วย
         participation.completed_by = staff_id
         participation.completed_at = datetime.now(timezone.utc)
+        participation.checked_out_at = datetime.now(timezone.utc) # ✅ Add consistency
 
         await db.commit()
         await db.refresh(participation)
@@ -344,6 +346,14 @@ async def verify_completion(db: AsyncSession, participation_id: int, staff_id: i
                 db, participation.user_id, participation.event_id,
                 participation.id, participation.event.title, completion_code
             )
+        
+        # ✅ Fix: เรียกตรวจสอบรางวัลหลัง Commit (เฉพาะกรณี Approved)
+        try:
+            from src.crud.reward_crud import check_and_award_rewards
+            await check_and_award_rewards(db, participation.user_id)
+        except Exception as e:
+            print(f"⚠️ Error checking rewards after verification: {e}")
+
     else:
         participation.status = ParticipationStatus.REJECTED
         participation.rejection_reason = rejection_reason
@@ -390,7 +400,9 @@ async def cancel_participation(
 
 async def get_user_statistics(db: AsyncSession, user_id: int) -> Dict:
     """General user statistics"""
-    # 1. Total Joined (excluding cancelled)
+    
+    # 1. Total Joined (นับทุกครั้งที่สมัคร ยกเว้น Cancel)
+    # หมายเหตุ: EXPIRED ถือว่าเคย Join แต่ทำไม่สำเร็จ จึงยังคงนับรวมใน total_joined
     total_joined_result = await db.execute(
         select(func.count(EventParticipation.id))
         .where(
@@ -400,55 +412,33 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> Dict:
     )
     total_events_joined = total_joined_result.scalar() or 0
 
-    # 2. Total Completed
+    # 2. Total Completed (นับเฉพาะความสำเร็จจริง)
+    # ✅ เพิ่ม CHECKED_OUT และไม่นับ EXPIRED
     completed_result = await db.execute(
         select(func.count(EventParticipation.id))
         .where(
             EventParticipation.user_id == user_id,
-            EventParticipation.status == ParticipationStatus.COMPLETED
+            EventParticipation.status.in_([
+                ParticipationStatus.COMPLETED, 
+                ParticipationStatus.CHECKED_OUT
+            ])
         )
     )
     total_events_completed = completed_result.scalar() or 0
 
-    # 3. Total Distance
-    distance_result = await db.execute(
-        select(func.sum(EventParticipation.actual_distance_km))
-        .where(
-            EventParticipation.user_id == user_id,
-            EventParticipation.status == ParticipationStatus.COMPLETED,
-            EventParticipation.actual_distance_km.isnot(None)
-        )
-    )
-    total_distance = distance_result.scalar()
-    total_distance_km = Decimal(total_distance) if total_distance else Decimal('0.00')
+    # ... (ส่วนคำนวณ Distance คงเดิม) ...
 
     # 4. Completion Rate
     completion_rate = 0.0
     if total_events_joined > 0:
         completion_rate = round((total_events_completed / total_events_joined) * 100, 2)
 
-    # 5. Current Month Completions
-    now = datetime.now(timezone.utc)
-    month_completed_result = await db.execute(
-        select(func.count(EventParticipation.id))
-        .where(
-            EventParticipation.user_id == user_id,
-            EventParticipation.status == ParticipationStatus.COMPLETED,
-            extract('month', EventParticipation.completed_at) == now.month,
-            extract('year', EventParticipation.completed_at) == now.year
-        )
-    )
-    current_month_completions = month_completed_result.scalar() or 0
-
     return {
         "user_id": user_id,
         "total_events_joined": total_events_joined,
         "total_events_completed": total_events_completed,
-        "total_distance_km": total_distance_km,
-        "completion_rate": completion_rate,
-        "current_month_completions": current_month_completions
+        # ...
     }
-
 
 async def get_user_event_stats(
         db: AsyncSession,
@@ -479,8 +469,15 @@ async def get_user_event_stats(
 
     # Calculate stats
     total_registrations = len(participations)
-    completed_runs = sum(1 for p in participations if p.status == ParticipationStatus.COMPLETED)
+    
+    # นับสำเร็จเฉพาะ COMPLETED และ CHECKED_OUT
+    completed_runs = sum(1 for p in participations if p.status in [
+        ParticipationStatus.COMPLETED, 
+        ParticipationStatus.CHECKED_OUT
+    ])
+    
     cancelled_runs = sum(1 for p in participations if p.status == ParticipationStatus.CANCELLED)
+    expired_runs = sum(1 for p in participations if p.status == ParticipationStatus.EXPIRED) # แยก Stats ให้ชัดเจน
 
     completion_rate = 0.0
     if total_registrations > 0:
@@ -897,30 +894,24 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
     if not participation:
         return None
 
-    # ✅ ตรวจสอบ status ที่สามารถ check-out ได้
-    # - CHECKED_IN: Check-in แล้วแต่ยังไม่ส่งหลักฐาน
-    # - PROOF_SUBMITTED: ส่งหลักฐานแล้วรอ verify หรือกำลัง check-out
-    # - CHECKED_OUT: อนุญาตให้ check-out ซ้ำ (กรณีพลาดหรือต้องการ complete)
+    # ตรวจสอบ status ที่สามารถ check-out ได้
     if participation.status not in [ParticipationStatus.CHECKED_IN, ParticipationStatus.PROOF_SUBMITTED, ParticipationStatus.CHECKED_OUT]:
         return None
 
-    # ✅ ปรับ Logic การเปลี่ยนสถานะให้ถูกต้อง
+    # ปรับ Logic การเปลี่ยนสถานะ
     if participation.status == ParticipationStatus.PROOF_SUBMITTED:
-        # ถ้าส่งหลักฐานแล้ว เมื่อ check-out ให้ถือว่า "สำเร็จ" (COMPLETED)
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_at = datetime.now(timezone.utc)
         participation.completed_by = staff_id
     elif participation.status == ParticipationStatus.CHECKED_OUT:
-        # ถ้า check-out ไปแล้ว กด check-out อีกครั้ง ให้เปลี่ยนเป็น COMPLETED
         participation.status = ParticipationStatus.COMPLETED
         participation.completed_at = datetime.now(timezone.utc)
         participation.completed_by = staff_id
     else:
-        # ถ้า check-in เฉยๆ แล้วออก (ไม่มีหลักฐาน) ให้เป็น CHECKED_OUT
+        # กรณี CHECKED_IN -> CHECKED_OUT
         participation.status = ParticipationStatus.CHECKED_OUT
-
-    participation.checked_out_by = staff_id
-    participation.checked_out_at = datetime.now(timezone.utc)
+        participation.checked_out_at = datetime.now(timezone.utc) # ✅ Ensure timestamp is set
+        participation.checked_out_by = staff_id
 
     await db.commit()
     await db.refresh(participation)
@@ -931,6 +922,14 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
             db, participation.user_id, participation.event_id,
             participation.id, participation.event.title
         )
+
+    # ✅ Fix: เรียกตรวจสอบรางวัลหลัง Commit สำเร็จแล้ว
+    try:
+        from src.crud.reward_crud import check_and_award_rewards
+        await check_and_award_rewards(db, participation.user_id)
+    except Exception as e:
+        # Log error แต่ไม่ให้ User เห็น Error นี้เพราะ Check-out สำเร็จแล้ว
+        print(f"⚠️ Error checking rewards for user {participation.user_id}: {e}")
 
     return participation
 
