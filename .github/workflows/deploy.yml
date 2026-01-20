@@ -1,4 +1,4 @@
-name: Deploy Frontend to Windows VPS
+name: Deploy to Windows VPS
 
 on:
   push:
@@ -9,50 +9,46 @@ jobs:
     runs-on: self-hosted
     
     steps:
-      - name: Checkout Code (Trigger)
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          clean: false 
+          clean: false
 
-      - name: Deploy Frontend Script
+      - name: Deploy Script
         shell: powershell
         run: |
           # ================= CONFIG =================
-   
-          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Frontend"
-          $PM2_NAME = "ku-run-frontend"
+          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend"
+          $SERVICE_EXE = "KURunService.exe"
           # ==========================================
 
-          Write-Host "Starting Frontend Deployment to $PROJECT_PATH..."
+          Write-Host "Starting Deployment to $PROJECT_PATH..."
 
-          if (Test-Path $PROJECT_PATH) {
-              cd $PROJECT_PATH
-          } else {
-              Write-Error "Project Path not found: $PROJECT_PATH"
-              exit 1
-          }
+          # 1. Go to project directory
+          cd $PROJECT_PATH
 
+          # 2. Pull latest code
           Write-Host "Pulling latest code..."
           git fetch origin master
           
-
+          # Force reset to match GitHub (Be careful: local changes will be lost)
           git reset --hard origin/master
 
-          Write-Host "Installing dependencies & Building..."
-
-          pnpm install --frozen-lockfile
-          pnpm run build
-
-
-          Write-Host "Restarting PM2 Service..."
-  
-          pm2 restart $PM2_NAME -ErrorAction SilentlyContinue
-          if ($LASTEXITCODE -ne 0) {
-              Write-Host "Process not running, starting new..."
-              pm2 start build/index.js --name $PM2_NAME
+          # 3. Update dependencies
+          if (Test-Path "env\Scripts\pip.exe") {
+              Write-Host "Installing dependencies..."
+              .\env\Scripts\pip install -r requirements.txt
           }
-          
 
-          pm2 save
+          # 4. Restart Service
+          Write-Host "Restarting Service..."
+          if (Test-Path $SERVICE_EXE) {
+              & ".\$SERVICE_EXE" restart
+              
+              Start-Sleep -Seconds 3
+              & ".\$SERVICE_EXE" status
+          } else {
+              Write-Error "Service file not found: $SERVICE_EXE"
+          }
 
-          Write-Host "Frontend Deployment Complete!"
+          Write-Host "Deployment Complete!"
