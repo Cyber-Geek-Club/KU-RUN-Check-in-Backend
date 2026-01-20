@@ -1,0 +1,53 @@
+name: CI/CD Pipeline
+
+# ทำงานเมื่อมีการ Push หรือ Pull Request เข้า branch main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    # ถ้าการทดสอบต้องใช้ Database จริง ให้ uncomment ส่วนนี้เพื่อจำลอง Postgres
+    # services:
+    #   postgres:
+    #     image: postgres:15
+    #     env:
+    #       POSTGRES_USER: user
+    #       POSTGRES_PASSWORD: password
+    #       POSTGRES_DB: test_db
+    #     ports:
+    #       - 5432:5432
+    #     options: >-
+    #       --health-cmd pg_isready
+    #       --health-interval 10s
+    #       --health-timeout 5s
+    #       --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'  # เลือก version ให้ตรงกับที่คุณใช้พัฒนา
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # ติดตั้ง httpx หากยังไม่มีใน requirements.txt เพื่อใช้ทดสอบ FastAPI
+        pip install httpx pytest-asyncio
+
+    - name: Run Tests
+      # ตั้งค่า Environment Variables สำหรับทดสอบ (ถ้าจำเป็น)
+      env:
+        DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/test_db
+        SECRET_KEY: testing_secret_key
+      run: |
+        pytest
