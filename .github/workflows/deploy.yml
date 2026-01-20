@@ -1,4 +1,4 @@
-name: Deploy to Windows Server
+name: Deploy WinSW to Windows Server
 
 on:
   push:
@@ -6,33 +6,39 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted  # สำคัญ: สั่งให้รันบนเครื่อง Windows ของคุณเอง
+    # สั่งให้รันบนเครื่อง Windows Server ของคุณ
+    runs-on: self-hosted
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Update Code and Restart Service
-      shell: powershell
-      run: |
-        # 1. เข้าไปที่โฟลเดอร์โปรเจกต์ (GitHub Runner จะ checkout โค้ดมาที่โฟลเดอร์ work ของมันเอง)
-        # แต่ถ้าคุณรัน Production แยกโฟลเดอร์ ให้สั่ง copy หรือ git pull ไปที่โฟลเดอร์นั้น
-        
-        $PROJECT_PATH = "C:\ku-run-backend"
-        
-        Write-Host "Deploying to $PROJECT_PATH..."
-        
-        # เปลี่ยนไปที่โฟลเดอร์งานจริง
-        cd $PROJECT_PATH
-        
-        # ดึงโค้ดล่าสุด
-        git pull origin main
-        
-        # อัปเดต Library
-        .\venv\Scripts\pip install -r requirements.txt
-        
-        # รีสตาร์ท Service (ต้องรัน Runner ด้วยสิทธิ์ Admin ถึงจะสั่ง restart ได้)
-        # หรือใช้ nssm restart ก็ได้
-        nssm restart KURunBackend
-        
-        Write-Host "Deployment Complete!"
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # ป้องกันปัญหา git permission บน Windows
+          clean: false 
+
+      - name: Deploy and Restart WinSW
+        shell: powershell
+        run: |
+          # 1. กำหนด Path ของโปรเจกต์ (แก้ให้ตรงกับเครื่องคุณ)
+          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend"
+          $SERVICE_EXE = "KURunService.exe"
+
+          Write-Host "Deploying to $PROJECT_PATH..."
+
+          # 2. เข้าไปที่โฟลเดอร์
+          cd $PROJECT_PATH
+
+          # 3. ดึงโค้ดล่าสุด
+          git pull origin main
+
+          # 4. อัปเดต Library (เผื่อมีการแก้ไข requirements.txt)
+          # หมายเหตุ: ถ้า gssapi มีปัญหาบน Windows อาจต้องข้าม หรือหาไฟล์ .whl มาลงเอง
+          .\venv\Scripts\pip install -r requirements.txt
+
+          # 5. รีสตาร์ท WinSW Service
+          Write-Host "Restarting Service..."
+          .\$SERVICE_EXE restart
+
+          # 6. เช็คสถานะ
+          .\$SERVICE_EXE status
+          Write-Host "Deployment Complete!"
