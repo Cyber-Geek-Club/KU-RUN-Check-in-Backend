@@ -4,6 +4,7 @@ anitya_schema==2.3.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.0
+APScheduler==3.10.4
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 arrow==1.4.0
@@ -52,6 +53,7 @@ hyperlink==21.0.0
 idna==3.11
 ImageHash==4.3.2
 Incremental==24.11.0
+iniconfig==2.3.0
 ipykernel==7.1.0
 ipython==9.7.0
 ipython_pygments_lexers==1.1.1
@@ -97,6 +99,7 @@ pexpect==4.9.0
 pika==1.3.2
 pillow==12.1.0
 platformdirs==4.5.0
+pluggy==1.6.0
 prometheus_client==0.23.1
 prompt_toolkit==3.0.52
 psutil==7.1.3
@@ -113,13 +116,17 @@ pydantic_core==2.41.5
 Pygments==2.19.2
 PyJWT==2.10.1
 pyOpenSSL==25.3.0
+pytest==9.0.2
+pytest-asyncio==1.3.0
 python-bugzilla==3.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-jose==3.5.0
 python-json-logger==4.0.0
 python-multipart==0.0.20
+pytz==2025.2
 PyWavelets==1.9.0
+pywinpty==3.0.2
 PyYAML==6.0.3
 pyzmq==27.1.0
 redis==5.3.1
@@ -153,6 +160,7 @@ Twisted==25.5.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.2
+tzlocal==5.3.1
 uri-template==1.3.0
 urllib3==2.5.0
 uvicorn==0.38.0
@@ -165,9 +173,3 @@ websockets==15.0.1
 Werkzeug==3.1.4
 wrapt==2.0.1
 zope.interface==8.1.1
-APScheduler==3.10.4
-httpx
-pytest 
-pytest-asyncio
-gssapi==1.10.1          
-requests-gssapi==1.4.0
