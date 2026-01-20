@@ -17,6 +17,7 @@ from src.api.endpoints import (
     participant_snapshots
 )
 from src.services.scheduler_service import start_scheduler, shutdown_scheduler
+from fastapi.middleware.gzip import GZipMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +39,7 @@ allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") i
 
 print(f"[OK] Allowed CORS origins: {allowed_origins}")  # Debug log
 
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # ✅ Specific origins instead of ["*"]
@@ -75,6 +77,7 @@ async def health_check():
     return {"status": "healthy"}
 
 # Include routers
+
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(events.router, prefix="/api/events", tags=["Events"])
 app.include_router(event_holidays.router, prefix="/api", tags=["Event Holidays"])
