@@ -2,7 +2,7 @@ name: Deploy to Windows VPS
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 jobs:
   deploy:
@@ -29,10 +29,10 @@ jobs:
 
           # 2. Pull latest code
           Write-Host "Pulling latest code..."
-          git fetch origin main
+          git fetch origin master
           
           # Force reset to match GitHub (Be careful: local changes will be lost)
-          git reset --hard origin/main
+          git reset --hard origin/master
 
           # 3. Update dependencies
           if (Test-Path "venv\Scripts\pip.exe") {
