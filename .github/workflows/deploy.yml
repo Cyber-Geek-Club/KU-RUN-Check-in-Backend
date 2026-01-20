@@ -51,3 +51,4 @@ jobs:
         # 5. เช็คสถานะ
         & ".\$SERVICE_NAME" status
         Write-Host "✅ Deployment Complete!"
+        
