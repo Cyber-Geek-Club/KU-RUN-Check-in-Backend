@@ -1,4 +1,4 @@
-name: Deploy to Server
+name: Deploy to Windows Server
 
 on:
   push:
@@ -6,18 +6,33 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # สำคัญ: สั่งให้รันบนเครื่อง Windows ของคุณเอง
+    
     steps:
-    # ... (steps ก่อนหน้า) ...
-
-    # 1. เพิ่ม Step นี้เข้าไปเพื่อลง Library ที่ขาด
-    - name: Install System Dependencies
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Update Code and Restart Service
+      shell: powershell
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libkrb5-dev
-
-    # 2. จากนั้นค่อยสั่งลง Python packages ตามเดิม
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        # 1. เข้าไปที่โฟลเดอร์โปรเจกต์ (GitHub Runner จะ checkout โค้ดมาที่โฟลเดอร์ work ของมันเอง)
+        # แต่ถ้าคุณรัน Production แยกโฟลเดอร์ ให้สั่ง copy หรือ git pull ไปที่โฟลเดอร์นั้น
+        
+        $PROJECT_PATH = "C:\ku-run-backend"
+        
+        Write-Host "Deploying to $PROJECT_PATH..."
+        
+        # เปลี่ยนไปที่โฟลเดอร์งานจริง
+        cd $PROJECT_PATH
+        
+        # ดึงโค้ดล่าสุด
+        git pull origin main
+        
+        # อัปเดต Library
+        .\venv\Scripts\pip install -r requirements.txt
+        
+        # รีสตาร์ท Service (ต้องรัน Runner ด้วยสิทธิ์ Admin ถึงจะสั่ง restart ได้)
+        # หรือใช้ nssm restart ก็ได้
+        nssm restart KURunBackend
+        
+        Write-Host "Deployment Complete!"
