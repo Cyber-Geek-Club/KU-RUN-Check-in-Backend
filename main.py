@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import os
 import logging
 from src.database.db_config import init_db
@@ -26,10 +27,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# Modern lifespan context manager for startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("[OK] Starting KU RUN Check-in API...")
+    await init_db()
+    logger.info("[OK] Database initialized")
+    
+    # Start scheduler for auto-unlock/lock
+    start_scheduler()
+    logger.info("[OK] Scheduler started")
+    
+    yield  # Application runs here
+    
+    # Shutdown
+    logger.info("[STOP] Shutting down KU RUN Check-in API...")
+    shutdown_scheduler()
+    logger.info("[STOP] Scheduler stopped")
+
+
 app = FastAPI(
     title="KU RUN Check-in API",
     description="API for KU Running Event Check-in System",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # 🔧 IMPROVED CORS Configuration
@@ -48,24 +71,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],  # 🆕 Add this
 )
-
-# Initialize database connection
-@app.on_event("startup")
-async def on_startup():
-    logger.info("[OK] Starting KU RUN Check-in API...")
-    await init_db()
-    logger.info("[OK] Database initialized")
-    
-    # Start scheduler for auto-unlock/lock
-    start_scheduler()
-    logger.info("[OK] Scheduler started")
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    logger.info("[STOP] Shutting down KU RUN Check-in API...")
-    shutdown_scheduler()
-    logger.info("[STOP] Scheduler stopped")
 
 # Health check
 @app.get("/api")
