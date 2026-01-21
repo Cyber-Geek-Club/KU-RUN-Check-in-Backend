@@ -8,9 +8,6 @@ venv/
 .venv/
 env/
 
-# Environment
-.env
-.env.local
 
 # IDE
 .idea/
