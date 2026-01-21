@@ -2,6 +2,7 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, or_
 from src.models.reward import Reward, UserReward
+from src.schemas.reward_schema import RewardCreate, RewardUpdate
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.event import Event
 from typing import Optional, List
