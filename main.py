@@ -42,7 +42,7 @@ print(f"[OK] Allowed CORS origins: {allowed_origins}")  # Debug log
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ✅ Specific origins instead of ["*"]
+    allow_origins=allowed_origins,  # ✅ Specific origins instead of ["*"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
