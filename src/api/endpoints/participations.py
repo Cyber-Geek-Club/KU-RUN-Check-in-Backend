@@ -162,6 +162,15 @@ async def verify_completion(
                 participation.user_id,
                 participation.event_id
             )
+            
+        # 3. ✅ Check & Verify for Single-Day Event Auto-Finalization
+        event = await event_crud.get_event_by_id(db, participation.event_id)
+        if event and (event.event_type == "single_day" or event.event_end_date.date() == event.event_date.date()):
+            # Check if event has ended
+            now = datetime.now(timezone.utc)
+            if event.event_end_date and now >= event.event_end_date:
+                # Trigger auto-finalize
+                await reward_lb_crud.auto_finalize_single_day_rewards(db, event.id)
 
     return participation
 

@@ -576,3 +576,24 @@ async def get_event_users_summary(db: AsyncSession, event_id: int) -> Dict[str, 
         "by_status": by_status,
         "completion_rate": round(completion_rate, 2)
     }
+
+async def auto_finalize_single_day_rewards(db: AsyncSession, event_id: int) -> bool:
+    """
+    Auto-finalize leaderboard for single-day event logic
+    Returns True if finalized, False otherwise
+    """
+    config = await get_leaderboard_config_by_event(db, event_id)
+    if not config:
+        return False
+        
+    if config.finalized_at:
+        return False
+        
+    # Calculate and Finalize
+    try:
+        await finalize_leaderboard(db, config.id)
+        logger.info(f"✅ Auto-finalized leaderboard for event {event_id}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to auto-finalize leaderboard for event {event_id}: {e}")
+        return False

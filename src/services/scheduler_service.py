@@ -13,6 +13,8 @@ from src.database.db_config import SessionLocal
 from src.models.event import Event, EventType
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.user import User
+from src.crud import reward_lb_crud
+
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,57 @@ async def auto_unlock_daily_codes():
             await db.rollback()
 
 
+async def auto_finalize_ended_single_day_events():
+    """
+    🏆 Auto-finalize: สรุปผลรางวัลสำหรับ Single-Day Events ที่จบแล้ว
+    
+    Time: รันทุกวันเวลา 00:30 น. (Asia/Bangkok)
+    Scope: Events ที่จบเมื่อวาน (หรือก่อนหน้า) ที่ยังไม่ finalize
+    """
+    now_bkk = datetime.now(BANGKOK_TZ)
+    logger.info(f"🏆 Starting auto-finalize for single-day events (Time: {now_bkk.strftime('%H:%M:%S')})")
+    
+    async with SessionLocal() as db:
+        try:
+            # 1. Find Single-Day Events that are ended but not finalized
+            # Note: We check events ended before NOW
+            now_utc = datetime.now(timezone.utc)
+            
+            # Subquery or Join to find events with non-finalized configs
+            # Easier to fetch candidate events then check config
+            
+            result = await db.execute(
+                select(Event, func.count(EventParticipation.id).label("p_count"))
+                .outerjoin(EventParticipation, Event.id == EventParticipation.event_id)
+                .where(
+                    and_(
+                        Event.event_type == EventType.SINGLE_DAY,
+                        Event.event_end_date < now_utc
+                    )
+                )
+                .group_by(Event.id)
+            )
+            
+            events = result.all()
+            finalized_count = 0
+            
+            for row in events:
+                event = row[0]
+                config = await reward_lb_crud.get_leaderboard_config_by_event(db, event.id)
+                
+                if config and not config.finalized_at:
+                    logger.info(f"   🔄 Finalizing event: {event.title} (ID: {event.id})")
+                    success = await reward_lb_crud.auto_finalize_single_day_rewards(db, event.id)
+                    if success:
+                        finalized_count += 1
+            
+            logger.info(f"   ✅ Auto-finalize completed. Finalized {finalized_count} events.")
+            
+        except Exception as e:
+            logger.error(f"❌ Auto-finalize failed: {str(e)}")
+
+
+
 def start_scheduler():
     """
     🚀 เริ่มต้น scheduler โดยใช้ Timezone Asia/Bangkok
@@ -233,11 +286,22 @@ def start_scheduler():
             name='Auto-expire unused codes',
             replace_existing=True
         )
+
+        # Auto-finalize: รันทุกวันเวลา 00:30 น.
+        scheduler.add_job(
+            auto_finalize_ended_single_day_events,
+            CronTrigger(hour=0, minute=30, timezone=BANGKOK_TZ),
+            id='auto_finalize_rewards',
+            name='Auto-finalize single-day rewards',
+            replace_existing=True
+        )
+
         
         scheduler.start()
         logger.info("⏰ Scheduler started successfully (Timezone: Asia/Bangkok)")
         logger.info("   🔓 Auto-unlock: Every day at 00:00")
         logger.info("   🔒 Auto-expire: Every day at 23:59")
+        logger.info("   🏆 Auto-finalize: Every day at 00:30")
         
     except Exception as e:
         logger.error(f"❌ Failed to start scheduler: {str(e)}")
