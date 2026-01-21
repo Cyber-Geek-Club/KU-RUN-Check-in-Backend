@@ -6,7 +6,6 @@ from src.schemas.reward_schema import RewardCreate, RewardUpdate
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.event import Event
 from typing import Optional, List
-from src.crud import notification_crud
 from datetime import datetime, timedelta, timezone
 import pytz
 import logging
@@ -149,6 +148,8 @@ async def check_and_award_rewards(db: AsyncSession, user_id: int):
                 
                 logger.info(f"🏆 Awarded reward '{reward.name}' to user {user_id}")
 
+                # Import here to avoid circular imports
+                from src.crud import notification_crud
                 await notification_crud.notify_reward_earned(
                     db, user_id, reward.id, reward.name
                 )
