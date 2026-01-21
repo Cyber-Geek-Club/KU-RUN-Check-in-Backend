@@ -398,6 +398,98 @@ async def cancel_participation(
     return participation
 
 
+async def rejoin_participation(
+        db: AsyncSession,
+        participation_id: int,
+        user_id: int
+) -> Optional[EventParticipation]:
+    """
+    Rejoin a cancelled participation (max 5 times)
+    """
+    participation = await get_participation_by_id(db, participation_id)
+
+    if not participation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ไม่พบการเข้าร่วมนี้"
+        )
+
+    if participation.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="คุณไม่มีสิทธิ์ในการดำเนินการนี้"
+        )
+
+    if participation.status != ParticipationStatus.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"สามารถ rejoin ได้เฉพาะสถานะ cancelled เท่านั้น (สถานะปัจจุบัน: {participation.status})"
+        )
+
+    # Check rejoin limit (max 5 times)
+    if participation.rejoin_count >= 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"คุณได้ใช้สิทธิ์ rejoin ครบ 5 ครั้งแล้ว"
+        )
+
+    # Check if event is still available
+    if participation.event:
+        event = participation.event
+        now = datetime.now(timezone.utc)
+        
+        # Check if event has ended
+        event_end = event.event_end_date or event.event_date
+        if event_end and now.date() > event_end.date():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="กิจกรรมนี้สิ้นสุดแล้ว ไม่สามารถ rejoin ได้"
+            )
+
+    # Generate new join code
+    join_code = generate_join_code()
+    while await get_participation_by_join_code(db, join_code):
+        join_code = generate_join_code()
+
+    # Reset participation and increment rejoin count
+    participation.status = ParticipationStatus.JOINED
+    participation.join_code = join_code
+    participation.joined_at = datetime.now(timezone.utc)
+    participation.rejoin_count += 1
+    participation.cancellation_reason = None
+    participation.cancelled_at = None
+    
+    # Reset other fields
+    participation.checked_in_at = None
+    participation.checked_in_by = None
+    participation.checked_out_at = None
+    participation.checked_out_by = None
+    participation.proof_image_url = None
+    participation.proof_image_hash = None
+    participation.proof_submitted_at = None
+    participation.strava_link = None
+    participation.actual_distance_km = None
+    participation.completed_at = None
+    participation.completed_by = None
+    participation.completion_code = None
+    participation.completion_rank = None
+    participation.rejection_reason = None
+    participation.rejected_at = None
+    participation.rejected_by = None
+
+    await db.commit()
+    await db.refresh(participation)
+
+    # Notify user
+    if participation.event:
+        await notification_crud.notify_event_joined(
+            db, user_id, participation.event_id,
+            participation.id, participation.event.title
+        )
+
+    return participation
+
+
 async def get_user_statistics(db: AsyncSession, user_id: int) -> Dict:
     """General user statistics"""
     

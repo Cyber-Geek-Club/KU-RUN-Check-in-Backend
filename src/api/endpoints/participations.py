@@ -181,6 +181,20 @@ async def cancel_participation(
     return participation
 
 
+@router.post("/{participation_id}/rejoin", response_model=EventParticipationRead)
+async def rejoin_participation(
+        participation_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    🔄 Rejoin a cancelled participation (max 5 times)
+    """
+    return await event_participation_crud.rejoin_participation(
+        db, participation_id, current_user.id
+    )
+
+
 @router.get("/user/{user_id}/all-events-stats")
 async def get_user_all_events_stats(
         user_id: int,

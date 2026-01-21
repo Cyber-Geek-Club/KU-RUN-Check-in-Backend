@@ -100,6 +100,9 @@ class EventParticipationRead(EventParticipationBase):
     cancellation_reason: Optional[str] = None
     cancelled_at: Optional[datetime] = None
 
+    # Rejoin tracking
+    rejoin_count: int = 0
+
     # Timestamps
     joined_at: datetime
     updated_at: datetime

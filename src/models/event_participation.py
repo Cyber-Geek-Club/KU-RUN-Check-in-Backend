@@ -70,6 +70,9 @@ class EventParticipation(Base):
     cancellation_reason = Column(Text, nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Rejoin tracking (max 5 times)
+    rejoin_count = Column(Integer, default=0, nullable=False)
+
     # Timestamps
     joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
