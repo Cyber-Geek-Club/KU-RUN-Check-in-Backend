@@ -1,4 +1,5 @@
 from fastapi import Depends, HTTPException, status
+import logging
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.db_config import SessionLocal
@@ -6,6 +7,9 @@ from src.utils.token import verify_access_token
 from src.crud import user_crud
 from src.models.user import User, UserRole
 from typing import Optional
+
+
+logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/login")
 
@@ -32,19 +36,23 @@ async def get_current_user(
     # Verify token
     payload = verify_access_token(token)
     if payload is None:
+        logger.warning(f"Auth Failed: Invalid/Expired Token. Token start: {token[:10]}...")
         raise credentials_exception
 
     user_id: str = payload.get("sub")
     if user_id is None:
+        logger.warning("Auth Failed: Token missing 'sub' claim")
         raise credentials_exception
 
     # Get user from database
     user = await user_crud.get_user_by_id(db, int(user_id))
     if user is None:
+        logger.warning(f"Auth Failed: User ID {user_id} not found in DB")
         raise credentials_exception
 
     # Check if user is verified
     if not user.is_verified:
+        logger.warning(f"Auth Failed: User {user_id} not verified")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email not verified"

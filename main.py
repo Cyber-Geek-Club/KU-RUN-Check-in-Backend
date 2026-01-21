@@ -57,7 +57,7 @@ app = FastAPI(
 
 # 🔧 IMPROVED CORS Configuration
 # Read allowed origins from environment
-allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,https://reg1.src.ku.ac.th")
 allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
 
 print(f"[OK] Allowed CORS origins: {allowed_origins}")  # Debug log
