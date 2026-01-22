@@ -37,16 +37,33 @@ def generate_verification_token() -> str:
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """
     Get user by ID with all subclass columns eagerly loaded.
-    Uses with_polymorphic with eager='joined' to ensure all joined-inheritance
-    columns are loaded in the same query, preventing MissingGreenlet errors.
+    
+    For async SQLAlchemy with joined table inheritance, we first get the base user
+    to determine the role, then query the specific subclass table directly.
+    This ensures all columns from the subclass table are loaded in the same query.
     """
-    from sqlalchemy.orm import with_polymorphic
-    # Use '*' to load all subclasses and set flat=True for proper joined loading
-    UserPoly = with_polymorphic(User, '*', flat=True)
-    result = await db.execute(
-        select(UserPoly).where(UserPoly.id == user_id)
-    )
-    return result.scalar_one_or_none()
+    # First, get the base user to determine the type
+    base_result = await db.execute(select(User).where(User.id == user_id))
+    base_user = base_result.scalar_one_or_none()
+    
+    if not base_user:
+        return None
+    
+    # Query the specific subclass based on role
+    if base_user.role == UserRole.STUDENT:
+        result = await db.execute(select(Student).where(Student.id == user_id))
+        return result.scalar_one_or_none()
+    elif base_user.role == UserRole.OFFICER:
+        result = await db.execute(select(Officer).where(Officer.id == user_id))
+        return result.scalar_one_or_none()
+    elif base_user.role == UserRole.STAFF:
+        result = await db.execute(select(Staff).where(Staff.id == user_id))
+        return result.scalar_one_or_none()
+    elif base_user.role == UserRole.ORGANIZER:
+        result = await db.execute(select(Organizer).where(Organizer.id == user_id))
+        return result.scalar_one_or_none()
+    
+    return base_user
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
@@ -64,13 +81,32 @@ async def get_user_by_verification_token(db: AsyncSession, token: str) -> Option
 async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
     """
     Get all users with pagination and all subclass columns eagerly loaded.
+    Queries each subclass table directly to ensure all columns are loaded.
     """
-    from sqlalchemy.orm import with_polymorphic
-    UserPoly = with_polymorphic(User, '*', flat=True)
-    result = await db.execute(
-        select(UserPoly).offset(skip).limit(limit)
-    )
-    return result.scalars().all()
+    from sqlalchemy import union_all
+    
+    # Query all user types and combine
+    all_users = []
+    
+    # Get students
+    student_result = await db.execute(select(Student))
+    all_users.extend(student_result.scalars().all())
+    
+    # Get officers
+    officer_result = await db.execute(select(Officer))
+    all_users.extend(officer_result.scalars().all())
+    
+    # Get staff
+    staff_result = await db.execute(select(Staff))
+    all_users.extend(staff_result.scalars().all())
+    
+    # Get organizers
+    organizer_result = await db.execute(select(Organizer))
+    all_users.extend(organizer_result.scalars().all())
+    
+    # Sort by ID and apply pagination
+    all_users.sort(key=lambda u: u.id)
+    return all_users[skip:skip + limit]
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
