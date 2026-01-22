@@ -33,10 +33,13 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    # Debug: Log received token
+    logger.info(f"[AUTH] Received token: {token[:30] if token else 'None'}...")
+
     # Verify token
     payload = verify_access_token(token)
     if payload is None:
-        logger.warning(f"Auth Failed: Invalid/Expired Token. Token start: {token[:10]}...")
+        logger.warning(f"[AUTH] Token verification FAILED. Token: {token[:30] if token else 'None'}...")
         raise credentials_exception
 
     user_id: str = payload.get("sub")

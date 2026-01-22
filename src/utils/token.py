@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta, timezone
 import os
+import logging
 from jose import jwt, JWTError
+
+logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("JWT_SECRET", "change_me_in_prod")
 ALGORITHM = "HS256"
@@ -10,9 +13,19 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 def create_access_token(data: dict, expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=expires_minutes)
     to_encode.update({"exp": expire})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    # Debug logging
+    logger.info(f"[TOKEN] Created access_token:")
+    logger.info(f"  - User ID (sub): {data.get('sub')}")
+    logger.info(f"  - Now (UTC): {now.isoformat()}")
+    logger.info(f"  - Expires (UTC): {expire.isoformat()}")
+    logger.info(f"  - Expires in: {expires_minutes} minutes")
+    logger.info(f"  - Token prefix: {token[:50]}...")
+    
     return token
 
 
@@ -31,8 +44,15 @@ def create_refresh_token(data: dict, expires_days: int = REFRESH_TOKEN_EXPIRE_DA
 def verify_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.info(f"[TOKEN] Verified access_token successfully:")
+        logger.info(f"  - User ID (sub): {payload.get('sub')}")
+        logger.info(f"  - Exp claim: {payload.get('exp')}")
         return payload
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        logger.warning(f"[TOKEN] Token EXPIRED! Token prefix: {token[:30]}...")
+        return None
+    except JWTError as e:
+        logger.warning(f"[TOKEN] Token verification failed: {e}. Token prefix: {token[:30]}...")
         return None
 
 
