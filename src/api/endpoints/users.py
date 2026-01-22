@@ -14,6 +14,7 @@ from src.schemas.user_schema import (
     StaffCreate, StaffRead,
     OrganizerCreate, OrganizerRead,
     UserResponse,          # ⭐ เพิ่ม
+    UserRead,              # Added missing import
     PasswordReset, PasswordResetConfirm,
     RefreshTokenRequest, RefreshTokenResponse
 )
