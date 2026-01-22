@@ -183,7 +183,11 @@ async def update_entry_progress(
     user_id: int,
     event_id: int
 ) -> Optional[RewardLeaderboardEntry]:
-    """Update user's progress"""
+    """
+    Update user's progress
+    ✅ นับเฉพาะ CHECKED_OUT และ COMPLETED (หลังจบกิจกรรม)
+    ❌ ไม่นับ CHECKED_IN (เพราะยังไม่จบ - สำหรับ single-day events ต้องรอให้วิ่งจบก่อน)
+    """
     config = await get_leaderboard_config_by_id(db, config_id)
 
     if not config or not config.is_active:
@@ -192,18 +196,25 @@ async def update_entry_progress(
     if config.finalized_at:
         return None
 
+    # ✅ นับเฉพาะ CHECKED_OUT และ COMPLETED (หลังจบกิจกรรมแล้ว)
+    # สำหรับ single-day: ต้องรอ check-out ถึงจะนับ (เพราะมีผลต่ออันดับ - ใครวิ่งเร็วช้าต่างกัน)
     result = await db.execute(
         select(EventParticipation)
         .where(
             EventParticipation.user_id == user_id,
             EventParticipation.event_id == event_id,
-            EventParticipation.status == ParticipationStatus.COMPLETED
+            EventParticipation.status.in_([
+                ParticipationStatus.CHECKED_OUT,
+                ParticipationStatus.COMPLETED
+            ])
         )
-        .order_by(EventParticipation.completed_at)
+        .order_by(EventParticipation.checked_out_at)
     )
     completions = result.scalars().all()
 
     if not completions:
+        # ถ้ายังไม่มี CHECKED_OUT หรือ COMPLETED ก็ไม่สร้าง entry
+        # (User ยังแค่ check-in อยู่ ยังไม่จบกิจกรรม)
         return None
 
     entry = await get_or_create_entry(db, config_id, user_id)
@@ -268,6 +279,41 @@ async def get_user_entry(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def update_entry_progress_and_recalculate(
+    db: AsyncSession,
+    user_id: int,
+    event_id: int
+) -> Optional[RewardLeaderboardEntry]:
+    """
+    🔥 Auto-Update Function: อัปเดต progress และคำนวณ rankings ทันที
+    เรียกใช้หลัง check-out หรือ completion
+    """
+    # 1. หา config จาก event_id
+    config = await get_leaderboard_config_by_event(db, event_id)
+    if not config:
+        logger.info(f"No leaderboard config found for event {event_id}")
+        return None
+    
+    # 2. อัปเดต entry progress
+    entry = await update_entry_progress(db, config.id, user_id, event_id)
+    
+    if not entry:
+        logger.info(f"No entry created for user {user_id} in event {event_id}")
+        return None
+    
+    # 3. คำนวณ rankings ทันที (auto mode)
+    try:
+        await calculate_and_allocate_rewards(db, config.id)
+        logger.info(f"✅ Auto-calculated rankings for config {config.id} after user {user_id} update")
+    except Exception as e:
+        logger.error(f"❌ Failed to auto-calculate rankings: {e}")
+    
+    # 4. Refresh entry เพื่อดึง rank ล่าสุด
+    await db.refresh(entry)
+    
+    return entry
 
 
 # ==========================================

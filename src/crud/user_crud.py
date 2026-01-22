@@ -35,7 +35,11 @@ def generate_verification_token() -> str:
 
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    result = await db.execute(select(User).where(User.id == user_id))
+    # Use with_polymorphic to eagerly load all subclass columns
+    # This prevents MissingGreenlet errors when accessing Student.nisit_id, etc.
+    from sqlalchemy.orm import with_polymorphic
+    UserPoly = with_polymorphic(User, [Student, Officer, Staff, Organizer])
+    result = await db.execute(select(UserPoly).where(UserPoly.id == user_id))
     return result.scalar_one_or_none()
 
 
@@ -52,7 +56,10 @@ async def get_user_by_verification_token(db: AsyncSession, token: str) -> Option
 
 
 async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
-    result = await db.execute(select(User).offset(skip).limit(limit))
+    # Use with_polymorphic to eagerly load all subclass columns
+    from sqlalchemy.orm import with_polymorphic
+    UserPoly = with_polymorphic(User, [Student, Officer, Staff, Organizer])
+    result = await db.execute(select(UserPoly).offset(skip).limit(limit))
     return result.scalars().all()
 
 
