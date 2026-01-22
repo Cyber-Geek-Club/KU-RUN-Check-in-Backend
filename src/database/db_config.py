@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from dotenv import load_dotenv
 import os
 
@@ -17,5 +18,13 @@ async def init_db():
             Base, User, Event, EventParticipation, EventHoliday,
             Reward, UserReward, PasswordResetLog, UploadedImage
         )
-        await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.run_sync(Base.metadata.create_all)
+        except (IntegrityError, ProgrammingError) as e:
+            # Ignore errors when ENUM types or tables already exist
+            # This can happen with multiple workers starting simultaneously
+            if "already exists" in str(e):
+                pass
+            else:
+                raise
 
