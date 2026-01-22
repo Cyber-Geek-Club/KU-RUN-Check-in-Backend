@@ -39,15 +39,42 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """
     Get user by ID with all subclass columns eagerly loaded.
     
-    Uses with_polymorphic to ensure all columns from the specific subclass table 
-    are loaded in the same query, avoiding MissingGreenlet errors in async context.
+    For async SQLAlchemy with joined table inheritance, we first get the base user
+    to determine the role, then query the specific subclass table directly and
+    refresh to ensure all columns are loaded within the async context.
     """
-    # Use with_polymorphic to eagerly load all subclass columns in one query
-    UserPoly = with_polymorphic(User, [Student, Officer, Staff, Organizer])
-    result = await db.execute(
-        select(UserPoly).where(UserPoly.id == user_id)
-    )
-    return result.scalar_one_or_none()
+    # First, get the base user to determine the type
+    base_result = await db.execute(select(User).where(User.id == user_id))
+    base_user = base_result.scalar_one_or_none()
+    
+    if not base_user:
+        return None
+    
+    # Query the specific subclass based on role and refresh to load all columns
+    if base_user.role == UserRole.STUDENT:
+        result = await db.execute(select(Student).where(Student.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            # Explicitly refresh to load all columns from students table
+            await db.refresh(user, ['nisit_id', 'major', 'faculty'])
+        return user
+    elif base_user.role == UserRole.OFFICER:
+        result = await db.execute(select(Officer).where(Officer.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            await db.refresh(user, ['department'])
+        return user
+    elif base_user.role == UserRole.STAFF:
+        result = await db.execute(select(Staff).where(Staff.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            await db.refresh(user, ['department'])
+        return user
+    elif base_user.role == UserRole.ORGANIZER:
+        result = await db.execute(select(Organizer).where(Organizer.id == user_id))
+        return result.scalar_one_or_none()
+    
+    return base_user
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
@@ -65,14 +92,38 @@ async def get_user_by_verification_token(db: AsyncSession, token: str) -> Option
 async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
     """
     Get all users with pagination and all subclass columns eagerly loaded.
-    Uses with_polymorphic to ensure all columns from subclass tables are loaded.
+    Queries each subclass table directly and refreshes to ensure all columns are loaded.
     """
-    # Use with_polymorphic to eagerly load all subclass columns
-    UserPoly = with_polymorphic(User, [Student, Officer, Staff, Organizer])
-    result = await db.execute(
-        select(UserPoly).order_by(UserPoly.id).offset(skip).limit(limit)
-    )
-    return result.scalars().all()
+    all_users = []
+    
+    # Get students and refresh to load all columns
+    student_result = await db.execute(select(Student))
+    students = student_result.scalars().all()
+    for student in students:
+        await db.refresh(student, ['nisit_id', 'major', 'faculty'])
+    all_users.extend(students)
+    
+    # Get officers and refresh to load all columns
+    officer_result = await db.execute(select(Officer))
+    officers = officer_result.scalars().all()
+    for officer in officers:
+        await db.refresh(officer, ['department'])
+    all_users.extend(officers)
+    
+    # Get staff and refresh to load all columns
+    staff_result = await db.execute(select(Staff))
+    staffs = staff_result.scalars().all()
+    for staff in staffs:
+        await db.refresh(staff, ['department'])
+    all_users.extend(staffs)
+    
+    # Get organizers (no extra columns to refresh)
+    organizer_result = await db.execute(select(Organizer))
+    all_users.extend(organizer_result.scalars().all())
+    
+    # Sort by ID and apply pagination
+    all_users.sort(key=lambda u: u.id)
+    return all_users[skip:skip + limit]
 
 
 async def create_user(db: AsyncSession, user: UserCreate) -> User:
