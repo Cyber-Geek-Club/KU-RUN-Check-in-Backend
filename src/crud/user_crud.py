@@ -35,11 +35,17 @@ def generate_verification_token() -> str:
 
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    # Use with_polymorphic to eagerly load all subclass columns
-    # This prevents MissingGreenlet errors when accessing Student.nisit_id, etc.
+    """
+    Get user by ID with all subclass columns eagerly loaded.
+    Uses with_polymorphic with eager='joined' to ensure all joined-inheritance
+    columns are loaded in the same query, preventing MissingGreenlet errors.
+    """
     from sqlalchemy.orm import with_polymorphic
-    UserPoly = with_polymorphic(User, [Student, Officer, Staff, Organizer])
-    result = await db.execute(select(UserPoly).where(UserPoly.id == user_id))
+    # Use '*' to load all subclasses and set flat=True for proper joined loading
+    UserPoly = with_polymorphic(User, '*', flat=True)
+    result = await db.execute(
+        select(UserPoly).where(UserPoly.id == user_id)
+    )
     return result.scalar_one_or_none()
 
 
@@ -56,10 +62,14 @@ async def get_user_by_verification_token(db: AsyncSession, token: str) -> Option
 
 
 async def get_users(db: AsyncSession, skip: int = 0, limit: int = 100):
-    # Use with_polymorphic to eagerly load all subclass columns
+    """
+    Get all users with pagination and all subclass columns eagerly loaded.
+    """
     from sqlalchemy.orm import with_polymorphic
-    UserPoly = with_polymorphic(User, [Student, Officer, Staff, Organizer])
-    result = await db.execute(select(UserPoly).offset(skip).limit(limit))
+    UserPoly = with_polymorphic(User, '*', flat=True)
+    result = await db.execute(
+        select(UserPoly).offset(skip).limit(limit)
+    )
     return result.scalars().all()
 
 
