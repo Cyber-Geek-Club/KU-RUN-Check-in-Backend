@@ -38,15 +38,21 @@ def generate_verification_token() -> str:
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """
     Get user by ID with all subclass columns eagerly loaded.
-    
-    Uses selectin_polymorphic to efficiently load subclass attributes only for the 
-    specific type of user found, ensuring all columns are loaded in the async context.
+    Safe for async + FastAPI response serialization.
     """
     from sqlalchemy.orm import selectin_polymorphic
-    
-    query = select(User).where(User.id == user_id).options(
-        selectin_polymorphic(User, [Student, Officer, Staff, Organizer])
+
+    query = (
+        select(User)
+        .where(User.id == user_id)
+        .options(
+            selectin_polymorphic(
+                User,
+                [Student, Officer, Staff, Organizer]
+            )
+        )
     )
+
     result = await db.execute(query)
     return result.scalar_one_or_none()
 

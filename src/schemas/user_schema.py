@@ -235,3 +235,12 @@ class RefreshTokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     expires_in: int
+
+from typing import Union
+
+UserResponse = Union[
+    StudentRead,
+    OfficerRead,
+    StaffRead,
+    OrganizerRead,
+]

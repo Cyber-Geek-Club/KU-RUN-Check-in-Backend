@@ -8,14 +8,16 @@ from src.api.dependencies.auth import (
 )
 from src.crud import user_crud
 from src.schemas.user_schema import (
-    UserCreate, UserUpdate, UserRead, UserLogin,
+    UserCreate, UserUpdate, UserLogin,
     StudentCreate, StudentRead,
     OfficerCreate, OfficerRead,
     StaffCreate, StaffRead,
     OrganizerCreate, OrganizerRead,
+    UserResponse,          # ⭐ เพิ่ม
     PasswordReset, PasswordResetConfirm,
     RefreshTokenRequest, RefreshTokenResponse
 )
+
 from src.models.user import User, Student
 from src.services.email_service import send_verification_email, send_password_reset_email
 from typing import List
@@ -437,18 +439,15 @@ async def reset_password(request: PasswordResetConfirm, db: AsyncSession = Depen
     return {"message": "Password reset successfully"}
 
 
-@router.get("/me", response_model=UserRead)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """
-    Get current logged-in user information
-    Requires: Any authenticated user
-
-    ดึงข้อมูลผู้ใช้ที่ล็อกอินอยู่
-    """
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user)
+):
     return current_user
 
 
-@router.get("/", response_model=List[UserRead])
+
+@router.get("/", response_model=List[UserResponse])
 async def get_users(
         skip: int = 0,
         limit: int = 100,
@@ -456,15 +455,14 @@ async def get_users(
         current_user: User = Depends(require_organizer)
 ):
     """
-    Get all users
-    Requires: Organizer role
-
-    ดึงข้อมูลผู้ใช้ทั้งหมด
+    Get all users (Organizer only)
     """
     return await user_crud.get_users(db, skip, limit)
 
 
-@router.get("/{user_id}", response_model=UserRead)
+
+
+@router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
         user_id: int,
         db: AsyncSession = Depends(get_db),
@@ -472,12 +470,11 @@ async def get_user(
 ):
     """
     Get user by ID
-    Requires: User can only view their own profile or organizer can view any
-
-    ดึงข้อมูลผู้ใช้ตาม ID
+    - User can see only their own profile
+    - Organizer can see everyone
     """
-    # Users can only view their own profile, unless they're organizer
-    if current_user.id != user_id and current_user.role.value != 'organizer':
+
+    if current_user.id != user_id and current_user.role.value != "organizer":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view your own profile"
@@ -489,7 +486,9 @@ async def get_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return user
+
+    return user  # ✅ SAFE (schema ตรง role)
+
 
 
 @router.put("/{user_id}", response_model=UserRead)
@@ -542,7 +541,7 @@ async def delete_user(
     return None
 
 
-@router.post("/{user_id}/unlock", response_model=UserRead)
+@router.post("/{user_id}/unlock", response_model=UserResponse)
 async def unlock_user_account(
         user_id: int,
         organizer_id: int,
