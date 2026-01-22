@@ -73,7 +73,8 @@ class Student(User):
     """Student table - ตารางเฉพาะนักศึกษา"""
     __tablename__ = "students"
     __mapper_args__ = {
-        "polymorphic_identity": UserRole.STUDENT
+        "polymorphic_identity": UserRole.STUDENT,
+        "polymorphic_load": "selectin"
     }
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
@@ -86,7 +87,8 @@ class Officer(User):
     """Officer table - ตารางเฉพาะเจ้าหน้าที่"""
     __tablename__ = "officers"
     __mapper_args__ = {
-        "polymorphic_identity": UserRole.OFFICER
+        "polymorphic_identity": UserRole.OFFICER,
+        "polymorphic_load": "selectin"
     }
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
@@ -97,7 +99,8 @@ class Staff(User):
     """Staff table - ตารางเฉพาะพนักงาน"""
     __tablename__ = "staffs"
     __mapper_args__ = {
-        "polymorphic_identity": UserRole.STAFF
+        "polymorphic_identity": UserRole.STAFF,
+        "polymorphic_load": "selectin"
     }
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
@@ -108,7 +111,8 @@ class Organizer(User):
     """Organizer table - ตารางเฉพาะผู้จัดงาน (ไม่มีข้อมูลเพิ่มเติม)"""
     __tablename__ = "organizers"
     __mapper_args__ = {
-        "polymorphic_identity": UserRole.ORGANIZER
+        "polymorphic_identity": UserRole.ORGANIZER,
+        "polymorphic_load": "selectin"
     }
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
