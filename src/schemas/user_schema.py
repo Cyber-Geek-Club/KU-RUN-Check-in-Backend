@@ -223,3 +223,15 @@ class PasswordReset(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    """Request schema for refreshing tokens"""
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    """Response schema for refresh token endpoint"""
+    access_token: str
+    refresh_token: str
+    expires_in: int

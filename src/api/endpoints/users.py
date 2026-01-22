@@ -13,12 +13,18 @@ from src.schemas.user_schema import (
     OfficerCreate, OfficerRead,
     StaffCreate, StaffRead,
     OrganizerCreate, OrganizerRead,
-    PasswordReset, PasswordResetConfirm
+    PasswordReset, PasswordResetConfirm,
+    RefreshTokenRequest, RefreshTokenResponse
 )
 from src.models.user import User, Student
 from src.services.email_service import send_verification_email, send_password_reset_email
 from typing import List
-from src.utils.token import create_access_token
+from src.utils.token import (
+    create_access_token,
+    create_refresh_token,
+    verify_refresh_token,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
 router = APIRouter()
 
@@ -312,18 +318,81 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     if user.failed_login_attempts > 0:
         await user_crud.reset_failed_login(db, user)
 
-    # Generate JWT access token
+    # Generate JWT access token and refresh token
     access_token = create_access_token({"sub": str(user.id)})
+    refresh_token = create_refresh_token({"sub": str(user.id)})
 
     return {
         "access_token": access_token,
-        "token_type": "bearer",
+        "refresh_token": refresh_token,
+        "token_type": "Bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
         "user_id": user.id,
         "email": user.email,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "role": user.role
     }
+
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+async def refresh_token(body: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Refresh access token using refresh token
+    Public endpoint - no authentication required (uses refresh token)
+
+    ใช้ refresh token เพื่อขอ access token ใหม่
+    """
+    # Verify the refresh token
+    payload = verify_refresh_token(body.refresh_token)
+    
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Get user ID from token
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify user still exists
+    user = await user_crud.get_user_by_id(db, int(user_id))
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Check if user is still verified and not locked
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified"
+        )
+    
+    if user.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="Account is locked"
+        )
+    
+    # Generate new tokens (token rotation for security)
+    new_access_token = create_access_token({"sub": str(user.id)})
+    new_refresh_token = create_refresh_token({"sub": str(user.id)})
+    
+    return RefreshTokenResponse(
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )
 
 
 @router.post("/forgot-password")
