@@ -411,6 +411,7 @@ async def check_out(
 ):
     """
     🆕 Check-out หลังจบกิจกรรม (Staff/Organizer only)
+    ✅ Auto-updates leaderboard rankings after check-out
     """
     participation = await event_participation_crud.check_out_participation(
         db, check_out_data.join_code, current_user.id
@@ -420,6 +421,13 @@ async def check_out(
             status_code=400,
             detail="Invalid code or not checked in yet"
         )
+    
+    # ✅ Auto-update leaderboard rankings after check-out
+    # This triggers ranking recalculation immediately
+    await reward_lb_crud.update_entry_progress_and_recalculate(
+        db, participation.user_id, participation.event_id
+    )
+    
     return participation
 
 

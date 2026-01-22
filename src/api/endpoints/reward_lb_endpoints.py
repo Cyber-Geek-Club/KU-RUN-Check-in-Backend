@@ -192,80 +192,85 @@ async def get_leaderboard_statistics(
     return await reward_lb_crud.get_leaderboard_stats(db, config_id)
 
 
-@router.post("/configs/{config_id}/calculate-ranks")
-async def calculate_rankings(
-    config_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_organizer)
-):
-    """
-    Preview Allocation (Organizer Only)
+# ❌ REMOVED: Manual calculate-ranks endpoint
+# Rankings now auto-update after check-out, no manual calculation needed
+# @router.post("/configs/{config_id}/calculate-ranks")
+# async def calculate_rankings(
+#     config_id: int,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(require_organizer)
+# ):
+#     """
+#     Preview Allocation (Organizer Only)
+#
+#     This calculates the 'Dynamic Priority Reallocation' WITHOUT finalizing.
+#     Use this to preview who will get rewards based on the current situation.
+#     """
+#     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
+#     if not config:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Leaderboard configuration not found"
+#         )
+#
+#     try:
+#         stats = await reward_lb_crud.calculate_and_allocate_rewards(db, config_id)
+#         return {
+#             "success": True,
+#             "message": f"Calculated dynamic allocation. Awarded: {stats['awarded']}, Waitlisted: {stats['waitlisted']}",
+#             "stats": stats
+#         }
+#     except ValueError as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=str(e)
+#         )
 
-    This calculates the 'Dynamic Priority Reallocation' WITHOUT finalizing.
-    Use this to preview who will get rewards based on the current situation.
-    """
-    config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-    if not config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Leaderboard configuration not found"
-        )
 
-    try:
-        stats = await reward_lb_crud.calculate_and_allocate_rewards(db, config_id)
-        return {
-            "success": True,
-            "message": f"Calculated dynamic allocation. Awarded: {stats['awarded']}, Waitlisted: {stats['waitlisted']}",
-            "stats": stats
-        }
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-
-@router.post("/configs/{config_id}/finalize")
-async def finalize_leaderboard(
-    config_id: int,
-    request: FinalizeLeaderboardRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_organizer)
-):
-    """Finalize Leaderboard (Organizer Only)"""
-    if not request.confirm:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Must confirm finalization by setting confirm=true"
-        )
-
-    config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
-    if not config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Leaderboard configuration not found"
-        )
-
-    now = datetime.now(timezone.utc)
-    if now < config.ends_at:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot finalize before event ends ({config.ends_at})"
-        )
-
-    try:
-        await reward_lb_crud.finalize_leaderboard(db, config_id)
-        stats = await reward_lb_crud.get_leaderboard_stats(db, config_id)
-        return {
-            "success": True,
-            "message": "Leaderboard finalized successfully",
-            "statistics": stats
-        }
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+# ❌ REMOVED: Manual finalize endpoint
+# Leaderboard is always live/real-time, no finalization needed
+# Users can see rankings immediately after check-out
+# @router.post("/configs/{config_id}/finalize")
+# async def finalize_leaderboard(
+#     config_id: int,
+#     request: FinalizeLeaderboardRequest,
+#     db: AsyncSession = Depends(get_db),
+#     current_user: User = Depends(require_organizer)
+# ):
+#     """Finalize Leaderboard (Organizer Only)"""
+#     if not request.confirm:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Must confirm finalization by setting confirm=true"
+#         )
+#
+#     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
+#     if not config:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="Leaderboard configuration not found"
+#         )
+#
+#     now = datetime.now(timezone.utc)
+#     if now < config.ends_at:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Cannot finalize before event ends ({config.ends_at})"
+#         )
+#
+#     try:
+#         await reward_lb_crud.finalize_leaderboard(db, config_id)
+#         stats = await reward_lb_crud.get_leaderboard_stats(db, config_id)
+#         return {
+#             "success": True,
+#             "message": "Leaderboard finalized successfully",
+#             "statistics": stats
+#         }
+#     except ValueError as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=str(e)
+#         )
 
 
 # ========== User Event Status Tracking (Organizer/Staff) ==========
