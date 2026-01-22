@@ -455,19 +455,19 @@ async def get_public_leaderboard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get Public Leaderboard Rankings (All Users)"""
+    """
+    Get Public Leaderboard Rankings (All Users)
+    ✅ แสดงได้ทันที แม้ยังไม่ finalize (Real-time Leaderboard)
+    """
     config = await reward_lb_crud.get_leaderboard_config_by_id(db, config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leaderboard not found"
         )
-
-    if not config.finalized_at:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Leaderboard is not finalized yet. Rankings are not public."
-        )
+    
+    # ✅ ลบเงื่อนไข finalization - แสดงได้เลย (Real-time!)
+    # Note: Finalized leaderboards are read-only, active ones update in real-time
 
     return await reward_lb_crud.get_leaderboard_entries(
         db, config_id, qualified_only=True, skip=0, limit=limit
