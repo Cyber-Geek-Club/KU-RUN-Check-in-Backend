@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select, delete
-from src.database.db_config import SessionLocal
+from src.database.db_config import SessionLocal, init_db
 from src.models.event import Event, EventType
 from src.models.user import User, UserRole, Student
 from src.models.event_participation import EventParticipation, ParticipationStatus
@@ -40,6 +40,9 @@ async def test_unique_counting():
     print("\n" + "="*60)
     print("Testing Unique Participant Counting Logic")
     print("="*60)
+
+    # Initialize DB (Create tables)
+    await init_db()
 
     async with SessionLocal() as db:
         creator = await create_test_user(db, UserRole.ORGANIZER)
@@ -123,14 +126,61 @@ async def test_unique_counting():
             print(f"   Remaining Slots: {cap['remaining_slots']} (Expected: 0)")
             assert cap['remaining_slots'] == 0, "Remaining slots should be 0"
 
-            # 7. User 3 Tries to Join (Should check capacity)
-            print("\nUser 3 joins... (Simulating capacity check)")
-            cap_check = await event_crud.check_event_capacity(db, event.id)
-            if not cap_check['can_join']:
-                print("User 3 cannot join (Correctly blocked)")
-            else:
-                print("User 3 CAN join (Incorrect)")
-                raise AssertionError("User 3 should not be able to join")
+            # 8. Cancellation & Rejoin Test
+            print("\nUser 1 cancels participation...")
+            p1.status = ParticipationStatus.CANCELLED
+            await db.commit()
+            await db.refresh(event, attribute_names=['participations'])
+            
+            print(f"   Count after cancel: {event.participant_count} (Expected: 1 - Only User 2)")
+            assert event.participant_count == 1, "Count should be 1 (User 2 only)"
+            assert event.is_full == False, "Event should not be full"
+
+            print("\nUser 1 Rejoins (New participation record)...")
+            p1_rejoin = await event_participation_crud.create_participation(
+                db, 
+                EventParticipationCreate(event_id=event.id), 
+                user1.id
+            )
+            await db.refresh(event, attribute_names=['participations'])
+            print(f"   Count after rejoin: {event.participant_count} (Expected: 2)")
+            assert event.participant_count == 2, "Count should be 2"
+            assert event.is_full == True, "Event should be full again"
+
+            # 9. Status Change Test (Check-in / Complete)
+            print("\nUser 1 Check-in & Complete...")
+            p1_rejoin.status = ParticipationStatus.COMPLETED
+            await db.commit()
+            await db.refresh(event, attribute_names=['participations'])
+            print(f"   Count after complete: {event.participant_count} (Expected: 2)")
+            assert event.participant_count == 2, "Count should remain 2"
+
+            # 10. Duplicate with Mixed Status
+            print("\nUser 1 has multiple records (Cancelled + Completed + Joined)...")
+            # Create a 'glitch' record where they joined again despite being completed
+            p1_glitch = EventParticipation(
+                user_id=user1.id,
+                event_id=event.id,
+                status=ParticipationStatus.JOINED,
+                join_code=f"GLITCH-{random_string()}"
+            )
+            db.add(p1_glitch)
+            await db.commit()
+            
+            await db.refresh(event, attribute_names=['participations'])
+            
+            # Check DB records count
+            user1_records = await db.execute(
+                select(EventParticipation).where(
+                    EventParticipation.user_id == user1.id,
+                    EventParticipation.event_id == event.id
+                )
+            )
+            records_count = len(user1_records.scalars().all())
+            print(f"   User 1 has {records_count} records total (Expected > 1)")
+            
+            print(f"   Event Participant Count: {event.participant_count} (Expected: 2)")
+            assert event.participant_count == 2, f"Count failed! Got {event.participant_count}, Expected 2"
 
             print("\nALL TESTS PASSED")
 
