@@ -192,7 +192,9 @@ async def test_unique_counting():
             print("\nCleaning up...")
             if event:
                 await db.delete(event)
-            # Delete users
+            # Delete students first (FK constraint)
+            await db.execute(delete(Student).where(Student.id.in_([creator.id, user1.id, user2.id, user3.id])))
+            # Then delete users
             await db.execute(delete(User).where(User.id.in_([creator.id, user1.id, user2.id, user3.id])))
             await db.commit()
             print("Cleanup done.")

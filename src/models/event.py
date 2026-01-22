@@ -62,7 +62,8 @@ class Event(Base):
         "EventParticipation",
         back_populates="event",
         cascade="all, delete-orphan",
-        passive_deletes=True
+        passive_deletes=True,
+        lazy="selectin"  # Use selectin for async compatibility
     )
     
     # Leaderboard relationship
@@ -79,7 +80,8 @@ class Event(Base):
         back_populates="event",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        order_by="EventHoliday.holiday_date"
+        order_by="EventHoliday.holiday_date",
+        lazy="selectin"  # Use selectin for async compatibility
     )
 
     @property
