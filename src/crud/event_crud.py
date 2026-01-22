@@ -31,21 +31,28 @@ async def get_event_participant_stats(db: AsyncSession, event_id: int) -> Partic
     )
     participations = result.all()
 
-    by_status: Dict[str, int] = {}
-    by_role: Dict[str, int] = {}
+    unique_user_ids = set()
+    by_status_users: Dict[str, set] = {}
+    by_role_users: Dict[str, set] = {}
 
     for participation, user in participations:
+        unique_user_ids.add(user.id)
+
         # Handle both enum and string values safely
         status = get_value_safe(participation.status, "unknown")
-        by_status[status] = by_status.get(status, 0) + 1
+        if status not in by_status_users:
+            by_status_users[status] = set()
+        by_status_users[status].add(user.id)
 
         role = get_value_safe(user.role, "unknown")
-        by_role[role] = by_role.get(role, 0) + 1
+        if role not in by_role_users:
+            by_role_users[role] = set()
+        by_role_users[role].add(user.id)
 
     return ParticipantStats(
-        total=len(participations),
-        by_status=by_status,
-        by_role=by_role
+        total=len(unique_user_ids),
+        by_status={k: len(v) for k, v in by_status_users.items()},
+        by_role={k: len(v) for k, v in by_role_users.items()}
     )
 
 
@@ -60,7 +67,12 @@ async def get_event_participants(db: AsyncSession, event_id: int) -> List[Partic
     participations = result.all()
 
     participants = []
+    seen_user_ids = set()
     for participation, user in participations:
+        if user.id in seen_user_ids:
+            continue
+        seen_user_ids.add(user.id)
+
         # Handle both enum and string status/role values
         status = get_value_safe(participation.status, "unknown")
         role = get_value_safe(user.role, "unknown")

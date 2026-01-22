@@ -95,11 +95,11 @@ class Event(Base):
 
         from src.models.event_participation import ParticipationStatus
 
-        active_participants = [
-            p for p in self.participations
+        active_user_ids = {
+            p.user_id for p in self.participations
             if p.status != ParticipationStatus.CANCELLED
-        ]
-        return len(active_participants)
+        }
+        return len(active_user_ids)
 
     @property
     def remaining_slots(self) -> int:

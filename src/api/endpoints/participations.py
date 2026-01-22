@@ -5,7 +5,7 @@ from typing import List, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, case, select, or_
+from sqlalchemy import func, case, select, or_, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from src.crud import  reward_lb_crud
@@ -439,16 +439,16 @@ async def get_event_current_status(
     # นับตาม status
     result = await db.execute(
         select(
-            func.count(EventParticipation.id).label('total'),
-            func.sum(
-                case((EventParticipation.status == ParticipationStatus.CHECKED_IN, 1), else_=0)
-            ).label('currently_in'),
-            func.sum(
-                case((EventParticipation.status == ParticipationStatus.CHECKED_OUT, 1), else_=0)
-            ).label('checked_out'),
-            func.sum(
-                case((EventParticipation.status == ParticipationStatus.COMPLETED, 1), else_=0)
-            ).label('completed')
+            func.count(distinct(EventParticipation.user_id)).label('total'),
+            func.count(distinct(
+                case((EventParticipation.status == ParticipationStatus.CHECKED_IN, EventParticipation.user_id), else_=None)
+            )).label('currently_in'),
+            func.count(distinct(
+                case((EventParticipation.status == ParticipationStatus.CHECKED_OUT, EventParticipation.user_id), else_=None)
+            )).label('checked_out'),
+            func.count(distinct(
+                case((EventParticipation.status == ParticipationStatus.COMPLETED, EventParticipation.user_id), else_=None)
+            )).label('completed')
         )
         .where(
             EventParticipation.event_id == event_id,
@@ -458,11 +458,11 @@ async def get_event_current_status(
 
     stats = result.first()
 
-    # นับแยกตาม status
+    # นับแยกตาม status (Unique Users)
     status_result = await db.execute(
         select(
             EventParticipation.status,
-            func.count(EventParticipation.id)
+            func.count(distinct(EventParticipation.user_id))
         )
         .where(EventParticipation.event_id == event_id)
         .group_by(EventParticipation.status)
@@ -501,7 +501,12 @@ async def get_active_participants(
     )
 
     participants = []
+    seen_active = set()
     for participation, user in result.all():
+        if user.id in seen_active:
+            continue
+        seen_active.add(user.id)
+        
         participants.append({
             "participation_id": participation.id,
             "join_code": participation.join_code,
@@ -687,7 +692,7 @@ async def get_event_report(
     status_result = await db.execute(
         select(
             EventParticipation.status,
-            func.count(EventParticipation.id)
+            func.count(distinct(EventParticipation.user_id))
         )
         .where(EventParticipation.event_id == event_id)
         .group_by(EventParticipation.status)
@@ -788,7 +793,12 @@ async def export_event_csv(
     ])
 
     # Data
+    seen_export = set()
     for participation, user in result.all():
+        if user.id in seen_export:
+            continue
+        seen_export.add(user.id)
+
         duration = None
         if participation.checked_in_at and participation.checked_out_at:
             duration = int((participation.checked_out_at - participation.checked_in_at).total_seconds() / 60)
