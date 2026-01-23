@@ -1,0 +1,60 @@
+# Docker Ignore File
+# Prevents unnecessary files from being copied to the Docker image
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Virtual Environment
+.venv
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Tests
+tests/
+
+# Documentation
+*.md
+!README.md
+
+# Environment files (handled separately)
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# Uploads (mounted as volume)
+uploads/
+
+# Nginx config (handled separately)
+nginx/

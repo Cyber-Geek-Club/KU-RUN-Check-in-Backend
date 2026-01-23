@@ -279,7 +279,20 @@ async def auto_finalize_ended_single_day_events():
 def start_scheduler():
     """
     🚀 เริ่มต้น scheduler โดยใช้ Timezone Asia/Bangkok
+    
+    Note: In load-balanced environments, only one instance should run the scheduler.
+    Set ENABLE_SCHEDULER=false on secondary instances to prevent duplicate jobs.
     """
+    import os
+    
+    # Check if scheduler should be enabled (default: True for backward compatibility)
+    enable_scheduler = os.getenv("ENABLE_SCHEDULER", "true").lower() in ("true", "1", "yes")
+    instance_id = os.getenv("INSTANCE_ID", "main")
+    
+    if not enable_scheduler:
+        logger.info(f"⏰ Scheduler disabled for instance: {instance_id}")
+        return
+    
     try:
         # Auto-unlock: รันทุกวันเวลา 00:00 น. (เริ่มวันใหม่)
         scheduler.add_job(
