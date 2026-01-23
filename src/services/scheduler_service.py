@@ -133,9 +133,15 @@ async def auto_unlock_daily_codes():
             
             for event in active_events:
                 # หาผู้ใช้ที่เคยลงทะเบียนกิจกรรมนี้ (Pre-registered)
+                # ✅ แก้ไข: ดึงเฉพาะ user ที่มี participation ที่ไม่ใช่ CANCELLED
                 users_result = await db.execute(
                     select(EventParticipation.user_id)
-                    .where(EventParticipation.event_id == event.id)
+                    .where(
+                        and_(
+                            EventParticipation.event_id == event.id,
+                            EventParticipation.status != ParticipationStatus.CANCELLED
+                        )
+                    )
                     .distinct()
                 )
                 registered_user_ids = [row[0] for row in users_result.fetchall()]
@@ -160,23 +166,28 @@ async def auto_unlock_daily_codes():
                     )
                     
                     if existing_today.scalar_one_or_none():
+                        logger.debug(f"      - User {user_id}: ⏭️ Skip - Already has today's participation")
                         continue  # มีของวันนี้แล้ว (อาจจะสร้างเองหรือระบบสร้างให้แล้ว)
                     
                     # 2. Check Quota (Max Check-ins)
-                    # ⚠️ กฎ: ไม่นับ EXPIRED แต่รวม CANCELLED (ตามนโยบาย)
+                    # ✅ แก้ไข: ไม่นับทั้ง EXPIRED และ CANCELLED
                     if event.max_checkins_per_user:
                         quota_query = select(func.count(EventParticipation.id)).where(
                             and_(
                                 EventParticipation.user_id == user_id,
                                 EventParticipation.event_id == event.id,
-                                EventParticipation.status != ParticipationStatus.EXPIRED # 🔑 Key Logic: Exclude EXPIRED
+                                # ✅ นับเฉพาะที่ไม่ใช่ EXPIRED และ CANCELLED
+                                not_(EventParticipation.status.in_([
+                                    ParticipationStatus.EXPIRED,
+                                    ParticipationStatus.CANCELLED
+                                ]))
                             )
                         )
                         quota_result = await db.execute(quota_query)
                         total_usage = quota_result.scalar() or 0
                         
                         if total_usage >= event.max_checkins_per_user:
-                            # โควตาเต็มแล้ว (รวม Cancelled แล้ว)
+                            logger.debug(f"      - User {user_id}: ⏭️ Skip - Quota full ({total_usage}/{event.max_checkins_per_user})")
                             continue
                     
                     # 3. Create New Participation
@@ -202,6 +213,7 @@ async def auto_unlock_daily_codes():
                     
                     db.add(new_participation)
                     codes_created += 1
+                    logger.debug(f"      - User {user_id}: ✅ Created new participation")
                 
                 await db.commit()
                 logger.info(f"   ✅ Event '{event.title}': Created {codes_created} new codes.")
