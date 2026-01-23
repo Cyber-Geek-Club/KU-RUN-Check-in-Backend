@@ -18,7 +18,8 @@ from fastapi import HTTPException, status
 from src.utils.image_hash import are_images_similar, get_hash_similarity_score
 import pytz
 
-BANGKOK_TZ = pytz.timezone('Asia/Bangkok')
+# ✅ ใช้ Server Local Time (เดิม: BANGKOK_TZ = pytz.timezone('Asia/Bangkok'))
+# BANGKOK_TZ = pytz.timezone('Asia/Bangkok')  # Commented out - ใช้ Server Time แทน
 
 def generate_join_code() -> str:
     """Generate unique 5-digit code"""
@@ -713,9 +714,9 @@ async def check_daily_registration_limit(
             detail="Event not found"
         )
 
-    # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
-    now_bkk = datetime.now(BANGKOK_TZ)
-    today = now_bkk.date()
+    # ✅ ใช้ Server Local Time
+    now_local = datetime.now()
+    today = now_local.date()
 
     # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
     event_start_date = event.event_date.date()

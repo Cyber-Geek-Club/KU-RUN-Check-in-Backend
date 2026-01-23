@@ -70,16 +70,16 @@ async def check_and_award_rewards(db: AsyncSession, user_id: int):
     ✅ Logic: นับเฉพาะ COMPLETED และ CHECKED_OUT
     ❌ Logic: ไม่นับ EXPIRED, JOINED, CANCELLED
     """
-    bangkok_tz = pytz.timezone('Asia/Bangkok')
-    now_bkk = datetime.now(bangkok_tz)
+    # ✅ ใช้ Server Local Time (เดิม: bangkok_tz = pytz.timezone('Asia/Bangkok'))
+    now_local = datetime.now()
     now_utc = datetime.now(timezone.utc)
 
     rewards = await get_rewards(db)
 
     for reward in rewards:
         # 1. เช็คว่าเดือนนี้ได้รางวัลไปหรือยัง (ตัดรอบตามเวลาไทย)
-        current_month = now_bkk.month
-        current_year = now_bkk.year
+        current_month = now_local.month
+        current_year = now_local.year
 
         existing_reward = await db.execute(
             select(UserReward).where(

@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
-# ✅ กำหนด Timezone สำหรับประเทศไทย
-BANGKOK_TZ = pytz.timezone('Asia/Bangkok')
+# ✅ ใช้ Server Local Time (ไม่กำหนด Timezone เพื่อให้ใช้ตามเวลา Server)
+# BANGKOK_TZ = pytz.timezone('Asia/Bangkok')  # Commented out - ใช้ Server Time แทน
 
 
 async def auto_expire_unused_codes():
@@ -33,11 +33,11 @@ async def auto_expire_unused_codes():
     States to expire: JOINED, CHECKED_IN, PROOF_SUBMITTED, CHECKED_OUT
     States to keep: COMPLETED, CANCELLED, EXPIRED (already)
     """
-    # 1. Get today's date in Bangkok time
-    now_bkk = datetime.now(BANGKOK_TZ)
-    today = now_bkk.date()
+    # 1. Get today's date in Server local time
+    now_local = datetime.now()
+    today = now_local.date()
     
-    logger.info(f"🔒 Starting auto-expire for date: {today} (Time: {now_bkk.strftime('%H:%M:%S')})")
+    logger.info(f"🔒 Starting auto-expire for date: {today} (Time: {now_local.strftime('%H:%M:%S')})")
     
     async with SessionLocal() as db:
         try:
@@ -96,10 +96,10 @@ async def auto_unlock_daily_codes():
     - User must NOT have today's participation yet.
     - User must NOT exceed max_checkins_per_user (EXCLUDING EXPIRED records).
     """
-    now_bkk = datetime.now(BANGKOK_TZ)
-    today = now_bkk.date()
+    now_local = datetime.now()
+    today = now_local.date()
     
-    logger.info(f"🔓 Starting auto-unlock for date: {today} (Time: {now_bkk.strftime('%H:%M:%S')})")
+    logger.info(f"🔓 Starting auto-unlock for date: {today} (Time: {now_local.strftime('%H:%M:%S')})")
     
     async with SessionLocal() as db:
         try:
@@ -232,8 +232,8 @@ async def auto_finalize_ended_single_day_events():
     Time: รันทุกวันเวลา 00:30 น. (Asia/Bangkok)
     Scope: Events ที่จบเมื่อวาน (หรือก่อนหน้า) ที่ยังไม่ finalize
     """
-    now_bkk = datetime.now(BANGKOK_TZ)
-    logger.info(f"🏆 Starting auto-finalize for single-day events (Time: {now_bkk.strftime('%H:%M:%S')})")
+    now_local = datetime.now()
+    logger.info(f"🏆 Starting auto-finalize for single-day events (Time: {now_local.strftime('%H:%M:%S')})")
     
     async with SessionLocal() as db:
         try:
@@ -297,7 +297,7 @@ def start_scheduler():
         # Auto-unlock: รันทุกวันเวลา 00:00 น. (เริ่มวันใหม่)
         scheduler.add_job(
             auto_unlock_daily_codes,
-            CronTrigger(hour=0, minute=0, timezone=BANGKOK_TZ),
+            CronTrigger(hour=0, minute=0),  # Server local time
             id='auto_unlock_daily',
             name='Auto-unlock daily codes',
             replace_existing=True
@@ -306,7 +306,7 @@ def start_scheduler():
         # Auto-expire: รันทุกวันเวลา 23:59 น. (สิ้นสุดวัน)
         scheduler.add_job(
             auto_expire_unused_codes,
-            CronTrigger(hour=23, minute=59, timezone=BANGKOK_TZ),
+            CronTrigger(hour=23, minute=59),  # Server local time
             id='auto_expire_codes',
             name='Auto-expire unused codes',
             replace_existing=True
@@ -315,7 +315,7 @@ def start_scheduler():
         # Auto-finalize: รันทุกวันเวลา 00:30 น.
         scheduler.add_job(
             auto_finalize_ended_single_day_events,
-            CronTrigger(hour=0, minute=30, timezone=BANGKOK_TZ),
+            CronTrigger(hour=0, minute=30),  # Server local time
             id='auto_finalize_rewards',
             name='Auto-finalize single-day rewards',
             replace_existing=True
@@ -323,7 +323,7 @@ def start_scheduler():
 
         
         scheduler.start()
-        logger.info("⏰ Scheduler started successfully (Timezone: Asia/Bangkok)")
+        logger.info("⏰ Scheduler started successfully (Timezone: Server Local Time)")
         logger.info("   🔓 Auto-unlock: Every day at 00:00")
         logger.info("   🔒 Auto-expire: Every day at 23:59")
         logger.info("   🏆 Auto-finalize: Every day at 00:30")
