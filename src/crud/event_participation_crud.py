@@ -753,7 +753,7 @@ async def check_daily_registration_limit(
             )
         )
     )
-    existing_today = today_registration_result.scalar_one_or_none()
+    existing_today = today_registration_result.scalars().first()
 
     if existing_today:
         return {
@@ -1077,7 +1077,7 @@ async def pre_register_for_multi_day_event(
         )
     )
 
-    if today_check.scalar_one_or_none():
+    if today_check.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"คุณได้ลงทะเบียนวันนี้แล้ว (วันที่ {today})"
