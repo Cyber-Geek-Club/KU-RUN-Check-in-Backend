@@ -30,8 +30,8 @@ async def auto_expire_unused_codes():
     
     Time: รันทุกวันเวลา 00:05 น. (Asia/Bangkok) ของวันถัดไป
     Scope: รายการของ 'เมื่อวาน' ที่ยังไม่เสร็จสิ้น
-    States to expire: JOINED, CHECKED_IN, PROOF_SUBMITTED, CHECKED_OUT
-    States to keep: COMPLETED, CANCELLED, EXPIRED (already)
+    States to expire: JOINED, CHECKED_IN
+    States to keep: COMPLETED, CANCELLED, EXPIRED (already), REJECTED, PROOF_SUBMITTED, CHECKED_OUT
     """
     # 1. Get today's date in Bangkok time
     now_bkk = datetime.now(BANGKOK_TZ)
@@ -52,7 +52,9 @@ async def auto_expire_unused_codes():
                         ParticipationStatus.COMPLETED,
                         ParticipationStatus.CANCELLED,
                         ParticipationStatus.EXPIRED,
-                        ParticipationStatus.REJECTED # ขึ้นกับ Policy ว่า Rejected ถือว่าจบไหม ถ้าจบแล้วก็ไม่ต้อง Expire
+                        ParticipationStatus.REJECTED,
+                        ParticipationStatus.PROOF_SUBMITTED, # ✅ รอตรวจสอบ ไม่ควรหมดอายุ
+                        ParticipationStatus.CHECKED_OUT      # ✅ จบงานแล้ว ไม่ควรหมดอายุ
                     ]))
                 )
             )
