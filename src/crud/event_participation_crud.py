@@ -225,7 +225,11 @@ async def submit_proof(
 ) -> Optional[EventParticipation]:
     """Submit proof with duplicate check"""
     participation = await get_participation_by_id(db, participation_id)
-    if not participation or participation.status != ParticipationStatus.CHECKED_IN:
+    
+    # ✅ FIX: Allow proof submission for both JOINED and CHECKED_IN statuses
+    # Rejoined users or daily participants start as JOINED.
+    valid_statuses = [ParticipationStatus.CHECKED_IN, ParticipationStatus.JOINED]
+    if not participation or participation.status not in valid_statuses:
         return None
 
     # Check for duplicate images
@@ -260,6 +264,10 @@ async def submit_proof(
     participation.actual_distance_km = actual_distance_km
     participation.proof_submitted_at = datetime.now(timezone.utc)
     participation.status = ParticipationStatus.PROOF_SUBMITTED
+
+    # ✅ FIX: Ensure checked_in_at is set if submitting from JOINED state
+    if not participation.checked_in_at:
+        participation.checked_in_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(participation)
