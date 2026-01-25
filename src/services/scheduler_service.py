@@ -28,7 +28,7 @@ async def auto_expire_unused_codes():
     """
     🔒 Auto-expire: เปลี่ยนสถานะทุกรายการที่ยังไม่สำเร็จให้เป็น EXPIRED
     
-    Time: รันทุกวันเวลา 00:05 น. (Asia/Bangkok) ของวันถัดไป
+    Time: รันทุกวันเวลา 03:00 น. (Asia/Bangkok) ของวันถัดไป
     Scope: รายการของ 'เมื่อวาน' ที่ยังไม่เสร็จสิ้น
     States to expire: JOINED, CHECKED_IN
     States to keep: COMPLETED, CANCELLED, EXPIRED (already), REJECTED, PROOF_SUBMITTED, CHECKED_OUT
@@ -305,10 +305,10 @@ def start_scheduler():
             replace_existing=True
         )
         
-        # Auto-expire: รันทุกวันเวลา 00:05 น. (เริ่มวันใหม่)
+        # Auto-expire: รันทุกวันเวลา 03:00 น. (ตี 3) เพื่อให้เวลา user ส่งงานช่วงดึก
         scheduler.add_job(
             auto_expire_unused_codes,
-            CronTrigger(hour=0, minute=5, timezone=BANGKOK_TZ),
+            CronTrigger(hour=3, minute=0, timezone=BANGKOK_TZ),
             id='auto_expire_codes',
             name='Auto-expire unused codes',
             replace_existing=True

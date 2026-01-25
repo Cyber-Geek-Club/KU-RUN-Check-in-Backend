@@ -420,13 +420,14 @@ async def rejoin_participation(
             detail="คุณไม่มีสิทธิ์ในการดำเนินการนี้"
         )
 
-    if participation.status != ParticipationStatus.CANCELLED:
+    if participation.status not in [ParticipationStatus.CANCELLED, ParticipationStatus.EXPIRED]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"สามารถ rejoin ได้เฉพาะสถานะ cancelled เท่านั้น (สถานะปัจจุบัน: {participation.status})"
+            detail=f"สามารถ rejoin ได้เฉพาะสถานะ cancelled หรือ expired เท่านั้น (สถานะปัจจุบัน: {participation.status})"
         )
 
     # Check rejoin limit (max 5 times)
+    # Reset rejoin count for EXPIRED? No, keep limit.
     if participation.rejoin_count >= 5:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
