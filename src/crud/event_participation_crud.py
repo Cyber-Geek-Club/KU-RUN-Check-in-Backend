@@ -720,15 +720,17 @@ async def check_daily_registration_limit(
     3. Max Quota: Check global quota excluding EXPIRED records.
     """
     
-    # Get event info
-    event_result = await db.execute(select(Event).where(Event.id == event_id))
-    event = event_result.scalar_one_or_none()
-
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
-        )
+    # ✅ Debugging 500 Error
+    try:
+        # Get event info
+        event_result = await db.execute(select(Event).where(Event.id == event_id))
+        event = event_result.scalar_one_or_none()
+    
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
+            )
 
     # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
     now_bkk = datetime.now(BANGKOK_TZ)
@@ -807,12 +809,21 @@ async def check_daily_registration_limit(
                 "total_checkins": total_checkins
             }
 
-    return {
-        "can_register": True,
-        "reason": "สามารถลงทะเบียนวันนี้ได้",
-        "today_registration": None,
-        "total_checkins": total_checkins
-    }
+        return {
+            "can_register": True,
+            "reason": "สามารถลงทะเบียนวันนี้ได้",
+            "today_registration": None,
+            "total_checkins": total_checkins
+        }
+
+    except Exception as e:
+        import traceback
+        error_msg = f"🔥 Error in check_daily_registration_limit: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(
+             status_code=500,
+             detail=f"Internal Server Error: {str(e)}"
+        )
 
 async def create_daily_participation(
         db: AsyncSession,
