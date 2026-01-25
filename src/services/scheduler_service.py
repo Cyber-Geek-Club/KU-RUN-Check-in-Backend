@@ -28,8 +28,8 @@ async def auto_expire_unused_codes():
     """
     🔒 Auto-expire: เปลี่ยนสถานะทุกรายการที่ยังไม่สำเร็จให้เป็น EXPIRED
     
-    Time: รันทุกวันเวลา 23:59 น. (Asia/Bangkok)
-    Scope: รายการของ 'วันนี้' ที่ยังไม่เสร็จสิ้น
+    Time: รันทุกวันเวลา 00:05 น. (Asia/Bangkok) ของวันถัดไป
+    Scope: รายการของ 'เมื่อวาน' ที่ยังไม่เสร็จสิ้น
     States to expire: JOINED, CHECKED_IN, PROOF_SUBMITTED, CHECKED_OUT
     States to keep: COMPLETED, CANCELLED, EXPIRED (already)
     """
@@ -37,7 +37,7 @@ async def auto_expire_unused_codes():
     now_bkk = datetime.now(BANGKOK_TZ)
     today = now_bkk.date()
     
-    logger.info(f"🔒 Starting auto-expire for date: {today} (Time: {now_bkk.strftime('%H:%M:%S')})")
+    logger.info(f"🔒 Starting auto-expire for dates before: {today} (Time: {now_bkk.strftime('%H:%M:%S')})")
     
     async with SessionLocal() as db:
         try:
@@ -45,8 +45,8 @@ async def auto_expire_unused_codes():
             # เราเลือกเฉพาะรายการของวันนี้ (หรือเก่ากว่าที่อาจหลุดรอด) ที่ยังค้างสถานะอยู่
             query = select(EventParticipation).where(
                 and_(
-                    # เช็คว่าเป็นรายการของวันนี้ (หรือก่อนหน้า)
-                    EventParticipation.checkin_date <= today,
+                    # เช็คว่าเป็นรายการของเมื่อวาน (หรือก่อนหน้า)
+                    EventParticipation.checkin_date < today,
                     # สถานะที่ต้อง Expire (ยังไม่จบและยังไม่ยกเลิก)
                     not_(EventParticipation.status.in_([
                         ParticipationStatus.COMPLETED,
@@ -197,8 +197,8 @@ async def auto_unlock_daily_codes():
                     while await get_participation_by_join_code(db, join_code):
                         join_code = generate_join_code()
                     
-                    # หมดอายุตอนสิ้นวันของ 'วันนี้'
-                    code_expires_at = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+                    # หมดอายุตอนสิ้นวันของ 'วันนี้' (BKK)
+                    code_expires_at = BANGKOK_TZ.localize(datetime.combine(today, datetime.max.time()))
                     
                     new_participation = EventParticipation(
                         user_id=user_id,
@@ -303,10 +303,10 @@ def start_scheduler():
             replace_existing=True
         )
         
-        # Auto-expire: รันทุกวันเวลา 23:59 น. (สิ้นสุดวัน)
+        # Auto-expire: รันทุกวันเวลา 00:05 น. (เริ่มวันใหม่)
         scheduler.add_job(
             auto_expire_unused_codes,
-            CronTrigger(hour=23, minute=59, timezone=BANGKOK_TZ),
+            CronTrigger(hour=0, minute=5, timezone=BANGKOK_TZ),
             id='auto_expire_codes',
             name='Auto-expire unused codes',
             replace_existing=True

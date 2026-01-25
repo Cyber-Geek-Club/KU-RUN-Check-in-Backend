@@ -451,10 +451,18 @@ async def rejoin_participation(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
+    # Calculate dates (BKK)
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    code_expires_at = BANGKOK_TZ.localize(datetime.combine(today, datetime.max.time()))
+
     # Reset participation and increment rejoin count
     participation.status = ParticipationStatus.JOINED
     participation.join_code = join_code
     participation.joined_at = datetime.now(timezone.utc)
+    participation.checkin_date = today
+    participation.code_expires_at = code_expires_at
+    participation.code_used = False
     participation.rejoin_count += 1
     participation.cancellation_reason = None
     participation.cancelled_at = None
