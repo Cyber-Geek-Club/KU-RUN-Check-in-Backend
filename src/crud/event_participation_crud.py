@@ -758,7 +758,11 @@ async def check_daily_registration_limit(
                 EventParticipation.user_id == user_id,
                 EventParticipation.event_id == event_id,
                 EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
-                EventParticipation.status != ParticipationStatus.CANCELLED
+                # อนุญาตให้ลงใหม่ได้ถ้า status เป็น CANCELLED หรือ EXPIRED
+                EventParticipation.status.notin_([
+                    ParticipationStatus.CANCELLED,
+                    ParticipationStatus.EXPIRED
+                ])
             )
         )
     )
@@ -810,6 +814,11 @@ async def create_daily_participation(
     """
     🆕 สร้าง participation แบบรายวัน
     """
+    # 🔒 Lock User Row to prevent race conditions (duplicates)
+    await db.execute(
+        select(User.id).where(User.id == user_id).with_for_update()
+    )
+
     # ตรวจสอบว่าลงทะเบียนได้หรือไม่ (จะเช็ค Date Range และ Limit ให้)
     check_result = await check_daily_registration_limit(
         db, user_id, participation.event_id
