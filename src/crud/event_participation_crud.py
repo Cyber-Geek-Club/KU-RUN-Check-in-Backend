@@ -823,12 +823,13 @@ async def create_daily_participation(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
-    # กำหนดวันหมดอายุ (สิ้นสุดของวันนี้ UTC)
-    today = datetime.now(timezone.utc).date()
-    code_expires_at = datetime.combine(
-        today,
-        datetime.max.time()
-    ).replace(tzinfo=timezone.utc)
+    # กำหนดวันหมดอายุ (สิ้นสุดของวันนี้ BKK)
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    code_expires_at = BANGKOK_TZ.localize(
+        datetime.combine(today, datetime.max.time())
+    )
 
     # สร้าง participation
     db_participation = EventParticipation(
@@ -1059,10 +1060,16 @@ async def pre_register_for_multi_day_event(
             detail="กิจกรรมนี้ไม่รองรับการลงทะเบียนล่วงหน้า"
         )
 
-    # ใช้วันที่ปัจจุบันแบบ UTC
-    today = datetime.now(timezone.utc).date()
-    event_start = event.event_date.date()
-    event_end = event.event_end_date.date() if event.event_end_date else event_start
+    # ใช้วันที่ปัจจุบันแบบ BKK
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    # แปลงเวลา Event เป็น BKK เพื่อความถูกต้อง
+    event_start_dt = event.event_date.astimezone(BANGKOK_TZ) if event.event_date.tzinfo else event.event_date
+    event_end_dt = event.event_end_date.astimezone(BANGKOK_TZ) if event.event_end_date and event.event_end_date.tzinfo else event.event_end_date
+
+    event_start = event_start_dt.date()
+    event_end = event_end_dt.date() if event_end_dt else event_start
 
     # Determine the first valid check-in date
     first_day = max(event_start, today)
@@ -1114,10 +1121,9 @@ async def pre_register_for_multi_day_event(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
-    code_expires_at = datetime.combine(
-        first_day,
-        datetime.max.time()
-    ).replace(tzinfo=timezone.utc)
+    code_expires_at = BANGKOK_TZ.localize(
+        datetime.combine(first_day, datetime.max.time())
+    )
 
     new_participation = EventParticipation(
         user_id=user_id,
