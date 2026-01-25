@@ -732,82 +732,82 @@ async def check_daily_registration_limit(
                 detail="Event not found"
             )
 
-    # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
-    now_bkk = datetime.now(BANGKOK_TZ)
-    today = now_bkk.date()
+        # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
+        now_bkk = datetime.now(BANGKOK_TZ)
+        today = now_bkk.date()
 
-    # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
-    event_start_date = event.event_date.date()
-    event_end_date = event.event_end_date.date() if event.event_end_date else event_start_date
+        # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
+        event_start_date = event.event_date.date()
+        event_end_date = event.event_end_date.date() if event.event_end_date else event_start_date
 
-    if today < event_start_date:
-        return {
-            "can_register": False,
-            "reason": f"กิจกรรมยังไม่เริ่ม (เริ่มวันที่ {event_start_date})",
-            "today_registration": None,
-            "total_checkins": 0
-        }
+        if today < event_start_date:
+            return {
+                "can_register": False,
+                "reason": f"กิจกรรมยังไม่เริ่ม (เริ่มวันที่ {event_start_date})",
+                "today_registration": None,
+                "total_checkins": 0
+            }
 
-    if today > event_end_date:
-        return {
-            "can_register": False,
-            "reason": f"กิจกรรมสิ้นสุดแล้ว (สิ้นสุดวันที่ {event_end_date})",
-            "today_registration": None,
-            "total_checkins": 0
-        }
+        if today > event_end_date:
+            return {
+                "can_register": False,
+                "reason": f"กิจกรรมสิ้นสุดแล้ว (สิ้นสุดวันที่ {event_end_date})",
+                "today_registration": None,
+                "total_checkins": 0
+            }
 
-    # 🆕 Logic สำหรับ Multi-day (และ Single day ก็ใช้ Logic เดียวกันได้เพื่อความ Consistent)
+        # 🆕 Logic สำหรับ Multi-day (และ Single day ก็ใช้ Logic เดียวกันได้เพื่อความ Consistent)
 
-    # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
-    # เราเช็คเฉพาะ checkin_date == today และ status ไม่ใช่ CANCELLED
-    # หมายเหตุ: ถ้า status เป็น EXPIRED (ของวันนี้) ก็ถือว่าลงไปแล้วและหมดสิทธิ์วันนี้
-    today_registration_result = await db.execute(
-        select(EventParticipation)
-        .where(
-            and_(
-                EventParticipation.user_id == user_id,
-                EventParticipation.event_id == event_id,
-                EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
-                # อนุญาตให้ลงใหม่ได้ถ้า status เป็น CANCELLED หรือ EXPIRED
-                EventParticipation.status.notin_([
-                    ParticipationStatus.CANCELLED,
-                    ParticipationStatus.EXPIRED
-                ])
-            )
-        )
-    )
-    existing_today = today_registration_result.scalars().first()
-
-    if existing_today:
-        return {
-            "can_register": False,
-            "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (สถานะ: {existing_today.status})",
-            "today_registration": existing_today
-        }
-
-    # 2. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
-    # ⚠️ กฎ: นับทุกสถานะ ยกเว้น EXPIRED (แต่รวม CANCELLED ตามนโยบาย)
-    total_checkins = 0
-    if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
-        total_checkins_result = await db.execute(
-            select(func.count(EventParticipation.id))
+        # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
+        # เราเช็คเฉพาะ checkin_date == today และ status ไม่ใช่ CANCELLED
+        # หมายเหตุ: ถ้า status เป็น EXPIRED (ของวันนี้) ก็ถือว่าลงไปแล้วและหมดสิทธิ์วันนี้
+        today_registration_result = await db.execute(
+            select(EventParticipation)
             .where(
                 and_(
                     EventParticipation.user_id == user_id,
                     EventParticipation.event_id == event_id,
-                    EventParticipation.status != ParticipationStatus.EXPIRED  # 🔑 Exclude EXPIRED
+                    EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
+                    # อนุญาตให้ลงใหม่ได้ถ้า status เป็น CANCELLED หรือ EXPIRED
+                    EventParticipation.status.notin_([
+                        ParticipationStatus.CANCELLED,
+                        ParticipationStatus.EXPIRED
+                    ])
                 )
             )
         )
-        total_checkins = total_checkins_result.scalar() or 0
+        existing_today = today_registration_result.scalars().first()
 
-        if total_checkins >= event.max_checkins_per_user:
+        if existing_today:
             return {
                 "can_register": False,
-                "reason": f"คุณใช้สิทธิ์ครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
-                "today_registration": None,
-                "total_checkins": total_checkins
+                "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (สถานะ: {existing_today.status})",
+                "today_registration": existing_today
             }
+
+        # 2. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
+        # ⚠️ กฎ: นับทุกสถานะ ยกเว้น EXPIRED (แต่รวม CANCELLED ตามนโยบาย)
+        total_checkins = 0
+        if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
+            total_checkins_result = await db.execute(
+                select(func.count(EventParticipation.id))
+                .where(
+                    and_(
+                        EventParticipation.user_id == user_id,
+                        EventParticipation.event_id == event_id,
+                        EventParticipation.status != ParticipationStatus.EXPIRED  # 🔑 Exclude EXPIRED
+                    )
+                )
+            )
+            total_checkins = total_checkins_result.scalar() or 0
+
+            if total_checkins >= event.max_checkins_per_user:
+                return {
+                    "can_register": False,
+                    "reason": f"คุณใช้สิทธิ์ครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
+                    "today_registration": None,
+                    "total_checkins": total_checkins
+                }
 
         return {
             "can_register": True,
