@@ -1064,23 +1064,26 @@ async def pre_register_for_multi_day_event(
     event_start = event.event_date.date()
     event_end = event.event_end_date.date() if event.event_end_date else event_start
 
-    # ตรวจสอบว่าวันนี้มีรหัสแล้วหรือยัง
-    today_check = await db.execute(
+    # Determine the first valid check-in date
+    first_day = max(event_start, today)
+
+    # ตรวจสอบว่าวันที่ต้องการลงทะเบียน (first_day) มีรหัสแล้วหรือยัง
+    target_date_check = await db.execute(
         select(EventParticipation)
         .where(
             and_(
                 EventParticipation.user_id == user_id,
                 EventParticipation.event_id == event_id,
-                EventParticipation.checkin_date == today,
+                EventParticipation.checkin_date == first_day,
                 EventParticipation.status != ParticipationStatus.CANCELLED
             )
         )
     )
 
-    if today_check.scalars().first():
+    if target_date_check.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"คุณได้ลงทะเบียนวันนี้แล้ว (วันที่ {today})"
+            detail=f"คุณได้ลงทะเบียนสำหรับวันที่ {first_day} แล้ว"
         )
 
     # ตรวจสอบจำนวนครั้งทั้งหมด (ถ้ามี limit)
@@ -1106,8 +1109,6 @@ async def pre_register_for_multi_day_event(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="กิจกรรมนี้จบไปแล้ว ไม่สามารถลงทะเบียนได้"
         )
-
-    first_day = max(event_start, today)
 
     join_code = generate_join_code()
     while await get_participation_by_join_code(db, join_code):
