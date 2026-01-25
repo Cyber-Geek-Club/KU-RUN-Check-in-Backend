@@ -52,6 +52,7 @@ jobs:
         SMTP_PASSWORD: test
         FROM_EMAIL: test@example.com
         FRONTEND_URL: http://localhost:3000
+        PYTHONPATH: .
       run: |
         # Initialize DB tables if needed before tests (or rely on tests doing it)
         # Assuming tests might need tables. 
