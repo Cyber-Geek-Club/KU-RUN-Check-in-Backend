@@ -95,11 +95,13 @@ async def check_and_award_rewards(db: AsyncSession, user_id: int):
             continue
 
         # 2. นับจำนวนครั้งที่ทำสำเร็จ (Count Success)
-        start_date = now_utc - timedelta(days=reward.time_period_days)
+        # ✅ FIX: Use BKK time for consistency with checkin_date
+        start_date = now_bkk - timedelta(days=reward.time_period_days)
+        start_date_utc = now_utc - timedelta(days=reward.time_period_days) # Keep for db timestamp comparison
 
         # รวมทั้งกรณีของกิจกรรมแบบรายวัน (daily check-in)
-        # - สำหรับ participation ที่มี completed_at/checked_out_at: ตรวจสอบ datetime
-        # - สำหรับ daily check-in (Event.allow_daily_checkin): ตรวจสอบ EventParticipation.checkin_date (date)
+        # - สำหรับ participation ที่มี completed_at/checked_out_at: ตรวจสอบ datetime (ใช้ UTC ใน DB)
+        # - สำหรับ daily check-in (Event.allow_daily_checkin): ตรวจสอบ EventParticipation.checkin_date (date - ใช้ BKK)
         completed_count_result = await db.execute(
             select(EventParticipation)
             .join(Event, Event.id == EventParticipation.event_id)
@@ -107,18 +109,18 @@ async def check_and_award_rewards(db: AsyncSession, user_id: int):
                 and_(
                     EventParticipation.user_id == user_id,
                     or_(
-                        # ปกติ: ตรวจสอบ completed_at / checked_out_at
+                        # ปกติ: ตรวจสอบ completed_at / checked_out_at โดยใช้ UTC (Timestamp)
                         and_(
                             EventParticipation.status.in_([
                                 ParticipationStatus.COMPLETED,
                                 ParticipationStatus.CHECKED_OUT
                             ]),
                             or_(
-                                EventParticipation.completed_at >= start_date,
-                                EventParticipation.checked_out_at >= start_date
+                                EventParticipation.completed_at >= start_date_utc,
+                                EventParticipation.checked_out_at >= start_date_utc
                             )
                         ),
-                        # กรณี daily check-in ในกิจกรรม multi-day (หรือกิจกรรมที่เปิดให้ daily checkin)
+                        # กรณี daily check-in: ใช้ Date (BKK)
                         and_(
                             Event.allow_daily_checkin,
                             EventParticipation.checkin_date.isnot(None),

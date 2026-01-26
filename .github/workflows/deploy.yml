@@ -3,6 +3,7 @@ name: Deploy to Windows VPS
 on:
   push:
     branches: [ "master" ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -52,3 +53,4 @@ jobs:
           }
 
           Write-Host "Deployment Complete!"
+          
