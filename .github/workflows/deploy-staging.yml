@@ -1,0 +1,64 @@
+name: Deploy Staging to Windows VPS
+
+on:
+  push:
+    branches: [ "dev-isolated" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Deploy Script
+        shell: powershell
+        run: |
+          # ================= STAGING CONFIG =================
+          # Note: Separate folder for Staging
+          $PROJECT_PATH = "C:\Users\Administrator\Desktop\Web Project\KU-run\KU-RUN-Check-in-Backend-Staging"
+          
+          # Note: Separate Service for Staging (Must run on Port 8006)
+          $SERVICE_EXE = "KURunServiceStaging.exe"
+          # ==================================================
+
+          Write-Host "Starting **STAGING** Deployment to $PROJECT_PATH..."
+
+          # 0. Check if Staging Folder exists
+          if (-not (Test-Path $PROJECT_PATH)) {
+               Write-Error "Staging Directory not found at $PROJECT_PATH! Please create it manually on the VPS first."
+               exit 1
+          }
+
+          # 1. Go to project directory
+          cd $PROJECT_PATH
+
+          # 2. Pull latest code
+          Write-Host "Pulling latest code for 'dev-isolated'..."
+          git fetch origin dev-isolated
+          
+          # Force reset to match GitHub branch
+          git reset --hard origin/dev-isolated
+
+          # 3. Update dependencies
+          if (Test-Path "env\Scripts\pip.exe") {
+              Write-Host "Installing dependencies..."
+              .\env\Scripts\pip install -r requirements.txt
+          }
+
+          # 4. Restart Staging Service
+          Write-Host "Restarting Staging Service..."
+          if (Test-Path $SERVICE_EXE) {
+              & ".\$SERVICE_EXE" restart
+              
+              Start-Sleep -Seconds 3
+              & ".\$SERVICE_EXE" status
+          } else {
+              Write-Error "Service file not found: $SERVICE_EXE"
+          }
+
+          Write-Host "Staging Deployment Complete!"

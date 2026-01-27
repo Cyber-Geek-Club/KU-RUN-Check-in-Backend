@@ -225,7 +225,11 @@ async def submit_proof(
 ) -> Optional[EventParticipation]:
     """Submit proof with duplicate check"""
     participation = await get_participation_by_id(db, participation_id)
-    if not participation or participation.status != ParticipationStatus.CHECKED_IN:
+    
+    # ✅ FIX: Allow proof submission for both JOINED and CHECKED_IN statuses
+    # Rejoined users or daily participants start as JOINED.
+    valid_statuses = [ParticipationStatus.CHECKED_IN, ParticipationStatus.JOINED]
+    if not participation or participation.status not in valid_statuses:
         return None
 
     # Check for duplicate images
@@ -260,6 +264,10 @@ async def submit_proof(
     participation.actual_distance_km = actual_distance_km
     participation.proof_submitted_at = datetime.now(timezone.utc)
     participation.status = ParticipationStatus.PROOF_SUBMITTED
+
+    # ✅ FIX: Ensure checked_in_at is set if submitting from JOINED state
+    if not participation.checked_in_at:
+        participation.checked_in_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(participation)
@@ -420,13 +428,14 @@ async def rejoin_participation(
             detail="คุณไม่มีสิทธิ์ในการดำเนินการนี้"
         )
 
-    if participation.status != ParticipationStatus.CANCELLED:
+    if participation.status not in [ParticipationStatus.CANCELLED, ParticipationStatus.EXPIRED]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"สามารถ rejoin ได้เฉพาะสถานะ cancelled เท่านั้น (สถานะปัจจุบัน: {participation.status})"
+            detail=f"สามารถ rejoin ได้เฉพาะสถานะ cancelled หรือ expired เท่านั้น (สถานะปัจจุบัน: {participation.status})"
         )
 
     # Check rejoin limit (max 5 times)
+    # Reset rejoin count for EXPIRED? No, keep limit.
     if participation.rejoin_count >= 5:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -451,10 +460,18 @@ async def rejoin_participation(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
+    # Calculate dates (BKK)
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    code_expires_at = BANGKOK_TZ.localize(datetime.combine(today, datetime.max.time()))
+
     # Reset participation and increment rejoin count
     participation.status = ParticipationStatus.JOINED
     participation.join_code = join_code
     participation.joined_at = datetime.now(timezone.utc)
+    participation.checkin_date = today
+    participation.code_expires_at = code_expires_at
+    participation.code_used = False
     participation.rejoin_count += 1
     participation.cancellation_reason = None
     participation.cancelled_at = None
@@ -736,95 +753,110 @@ async def check_daily_registration_limit(
     3. Max Quota: Check global quota excluding EXPIRED records.
     """
     
-    # Get event info
-    event_result = await db.execute(select(Event).where(Event.id == event_id))
-    event = event_result.scalar_one_or_none()
-
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
-        )
-
-    # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
-    now_bkk = datetime.now(BANGKOK_TZ)
-    today = now_bkk.date()
-
-    # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
-    event_start_date = event.event_date.date()
-    event_end_date = event.event_end_date.date() if event.event_end_date else event_start_date
-
-    if today < event_start_date:
-        return {
-            "can_register": False,
-            "reason": f"กิจกรรมยังไม่เริ่ม (เริ่มวันที่ {event_start_date})",
-            "today_registration": None,
-            "total_checkins": 0
-        }
-
-    if today > event_end_date:
-        return {
-            "can_register": False,
-            "reason": f"กิจกรรมสิ้นสุดแล้ว (สิ้นสุดวันที่ {event_end_date})",
-            "today_registration": None,
-            "total_checkins": 0
-        }
-
-    # 🆕 Logic สำหรับ Multi-day (และ Single day ก็ใช้ Logic เดียวกันได้เพื่อความ Consistent)
-
-    # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
-    # เราเช็คเฉพาะ checkin_date == today และ status ไม่ใช่ CANCELLED
-    # หมายเหตุ: ถ้า status เป็น EXPIRED (ของวันนี้) ก็ถือว่าลงไปแล้วและหมดสิทธิ์วันนี้
-    today_registration_result = await db.execute(
-        select(EventParticipation)
-        .where(
-            and_(
-                EventParticipation.user_id == user_id,
-                EventParticipation.event_id == event_id,
-                EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
-                EventParticipation.status != ParticipationStatus.CANCELLED
+    # ✅ Debugging 500 Error
+    try:
+        # Get event info
+        event_result = await db.execute(select(Event).where(Event.id == event_id))
+        event = event_result.scalar_one_or_none()
+    
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
             )
-        )
-    )
-    existing_today = today_registration_result.scalar_one_or_none()
 
-    if existing_today:
-        return {
-            "can_register": False,
-            "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (สถานะ: {existing_today.status})",
-            "today_registration": existing_today
-        }
+        # ✅ ใช้ Timezone Asia/Bangkok สำหรับวันที่ปัจจุบัน
+        now_bkk = datetime.now(BANGKOK_TZ)
+        today = now_bkk.date()
 
-    # 2. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
-    # ⚠️ กฎ: นับทุกสถานะ ยกเว้น EXPIRED (แต่รวม CANCELLED ตามนโยบาย)
-    total_checkins = 0
-    if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
-        total_checkins_result = await db.execute(
-            select(func.count(EventParticipation.id))
+        # ตรวจสอบช่วงเวลากิจกรรม (Date Range)
+        event_start_date = event.event_date.date()
+        event_end_date = event.event_end_date.date() if event.event_end_date else event_start_date
+
+        if today < event_start_date:
+            return {
+                "can_register": False,
+                "reason": f"กิจกรรมยังไม่เริ่ม (เริ่มวันที่ {event_start_date})",
+                "today_registration": None,
+                "total_checkins": 0
+            }
+
+        if today > event_end_date:
+            return {
+                "can_register": False,
+                "reason": f"กิจกรรมสิ้นสุดแล้ว (สิ้นสุดวันที่ {event_end_date})",
+                "today_registration": None,
+                "total_checkins": 0
+            }
+
+        # 🆕 Logic สำหรับ Multi-day (และ Single day ก็ใช้ Logic เดียวกันได้เพื่อความ Consistent)
+
+        # 1. ตรวจสอบว่าวันนี้ลงทะเบียนแล้วหรือยัง (One time per day)
+        # เราเช็คเฉพาะ checkin_date == today และ status ไม่ใช่ CANCELLED
+        # หมายเหตุ: ถ้า status เป็น EXPIRED (ของวันนี้) ก็ถือว่าลงไปแล้วและหมดสิทธิ์วันนี้
+        today_registration_result = await db.execute(
+            select(EventParticipation)
             .where(
                 and_(
                     EventParticipation.user_id == user_id,
                     EventParticipation.event_id == event_id,
-                    EventParticipation.status != ParticipationStatus.EXPIRED  # 🔑 Exclude EXPIRED
+                    EventParticipation.checkin_date == today,  # 🔑 เช็คเฉพาะวันนี้
+                    # อนุญาตให้ลงใหม่ได้ถ้า status เป็น CANCELLED หรือ EXPIRED
+                    EventParticipation.status.notin_([
+                        ParticipationStatus.CANCELLED,
+                        ParticipationStatus.EXPIRED
+                    ])
                 )
             )
         )
-        total_checkins = total_checkins_result.scalar() or 0
+        existing_today = today_registration_result.scalars().first()
 
-        if total_checkins >= event.max_checkins_per_user:
+        if existing_today:
             return {
                 "can_register": False,
-                "reason": f"คุณใช้สิทธิ์ครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
-                "today_registration": None,
-                "total_checkins": total_checkins
+                "reason": f"คุณได้ลงทะเบียนวันนี้แล้ว (สถานะ: {existing_today.status})",
+                "today_registration": existing_today
             }
 
-    return {
-        "can_register": True,
-        "reason": "สามารถลงทะเบียนวันนี้ได้",
-        "today_registration": None,
-        "total_checkins": total_checkins
-    }
+        # 2. ตรวจสอบจำนวนครั้งทั้งหมด (Total check-in limit)
+        # ⚠️ กฎ: นับทุกสถานะ ยกเว้น EXPIRED (แต่รวม CANCELLED ตามนโยบาย)
+        total_checkins = 0
+        if hasattr(event, 'max_checkins_per_user') and event.max_checkins_per_user:
+            total_checkins_result = await db.execute(
+                select(func.count(EventParticipation.id))
+                .where(
+                    and_(
+                        EventParticipation.user_id == user_id,
+                        EventParticipation.event_id == event_id,
+                        EventParticipation.status != ParticipationStatus.EXPIRED  # 🔑 Exclude EXPIRED
+                    )
+                )
+            )
+            total_checkins = total_checkins_result.scalar() or 0
+
+            if total_checkins >= event.max_checkins_per_user:
+                return {
+                    "can_register": False,
+                    "reason": f"คุณใช้สิทธิ์ครบ {event.max_checkins_per_user} ครั้งแล้ว (ใช้งานไปแล้ว {total_checkins} ครั้ง)",
+                    "today_registration": None,
+                    "total_checkins": total_checkins
+                }
+
+        return {
+            "can_register": True,
+            "reason": "สามารถลงทะเบียนวันนี้ได้",
+            "today_registration": None,
+            "total_checkins": total_checkins
+        }
+
+    except Exception as e:
+        import traceback
+        error_msg = f"🔥 Error in check_daily_registration_limit: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(
+             status_code=500,
+             detail=f"Internal Server Error: {str(e)}"
+        )
 
 async def create_daily_participation(
         db: AsyncSession,
@@ -834,6 +866,11 @@ async def create_daily_participation(
     """
     🆕 สร้าง participation แบบรายวัน
     """
+    # 🔒 Lock User Row to prevent race conditions (duplicates)
+    await db.execute(
+        select(User.id).where(User.id == user_id).with_for_update()
+    )
+
     # ตรวจสอบว่าลงทะเบียนได้หรือไม่ (จะเช็ค Date Range และ Limit ให้)
     check_result = await check_daily_registration_limit(
         db, user_id, participation.event_id
@@ -856,12 +893,13 @@ async def create_daily_participation(
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
-    # กำหนดวันหมดอายุ (สิ้นสุดของวันนี้ UTC)
-    today = datetime.now(timezone.utc).date()
-    code_expires_at = datetime.combine(
-        today,
-        datetime.max.time()
-    ).replace(tzinfo=timezone.utc)
+    # กำหนดวันหมดอายุ (สิ้นสุดของวันนี้ BKK)
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    code_expires_at = BANGKOK_TZ.localize(
+        datetime.combine(today, datetime.max.time())
+    )
 
     # สร้าง participation
     db_participation = EventParticipation(
@@ -1092,28 +1130,37 @@ async def pre_register_for_multi_day_event(
             detail="กิจกรรมนี้ไม่รองรับการลงทะเบียนล่วงหน้า"
         )
 
-    # ใช้วันที่ปัจจุบันแบบ UTC
-    today = datetime.now(timezone.utc).date()
-    event_start = event.event_date.date()
-    event_end = event.event_end_date.date() if event.event_end_date else event_start
+    # ใช้วันที่ปัจจุบันแบบ BKK
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    # แปลงเวลา Event เป็น BKK เพื่อความถูกต้อง
+    event_start_dt = event.event_date.astimezone(BANGKOK_TZ) if event.event_date.tzinfo else event.event_date
+    event_end_dt = event.event_end_date.astimezone(BANGKOK_TZ) if event.event_end_date and event.event_end_date.tzinfo else event.event_end_date
 
-    # ตรวจสอบว่าวันนี้มีรหัสแล้วหรือยัง
-    today_check = await db.execute(
+    event_start = event_start_dt.date()
+    event_end = event_end_dt.date() if event_end_dt else event_start
+
+    # Determine the first valid check-in date
+    first_day = max(event_start, today)
+
+    # ตรวจสอบว่าวันที่ต้องการลงทะเบียน (first_day) มีรหัสแล้วหรือยัง
+    target_date_check = await db.execute(
         select(EventParticipation)
         .where(
             and_(
                 EventParticipation.user_id == user_id,
                 EventParticipation.event_id == event_id,
-                EventParticipation.checkin_date == today,
+                EventParticipation.checkin_date == first_day,
                 EventParticipation.status != ParticipationStatus.CANCELLED
             )
         )
     )
 
-    if today_check.scalar_one_or_none():
+    if target_date_check.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"คุณได้ลงทะเบียนวันนี้แล้ว (วันที่ {today})"
+            detail=f"คุณได้ลงทะเบียนสำหรับวันที่ {first_day} แล้ว"
         )
 
     # ตรวจสอบจำนวนครั้งทั้งหมด (ถ้ามี limit)
@@ -1140,16 +1187,13 @@ async def pre_register_for_multi_day_event(
             detail="กิจกรรมนี้จบไปแล้ว ไม่สามารถลงทะเบียนได้"
         )
 
-    first_day = max(event_start, today)
-
     join_code = generate_join_code()
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
 
-    code_expires_at = datetime.combine(
-        first_day,
-        datetime.max.time()
-    ).replace(tzinfo=timezone.utc)
+    code_expires_at = BANGKOK_TZ.localize(
+        datetime.combine(first_day, datetime.max.time())
+    )
 
     new_participation = EventParticipation(
         user_id=user_id,

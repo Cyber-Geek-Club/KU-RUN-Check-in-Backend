@@ -90,7 +90,7 @@ async def test_unique_counting():
                 user_id=user1.id,
                 event_id=event.id,
                 status=ParticipationStatus.JOINED,
-                join_code=f"DUP-{random_string()}"
+                join_code=random_string(5)
             )
             db.add(p1_duplicate)
             await db.commit()
@@ -162,7 +162,7 @@ async def test_unique_counting():
                 user_id=user1.id,
                 event_id=event.id,
                 status=ParticipationStatus.JOINED,
-                join_code=f"GLITCH-{random_string()}"
+                join_code=random_string(5)
             )
             db.add(p1_glitch)
             await db.commit()
