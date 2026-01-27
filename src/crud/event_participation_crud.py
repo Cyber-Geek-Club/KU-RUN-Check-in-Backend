@@ -21,8 +21,11 @@ import pytz
 BANGKOK_TZ = pytz.timezone('Asia/Bangkok')
 
 def generate_join_code() -> str:
-    """Generate unique 5-digit code"""
-    return ''.join(random.choices(string.digits, k=5))
+    """Generate unique 5-character alphanumeric code (A-Z, 0-9)"""
+    # Use uppercase letters and digits
+    # Pool size: 36^5 = 60,466,176 combinations (vs 10^5 = 100,000)
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(chars, k=5))
 
 
 def generate_completion_code() -> str:
@@ -1170,6 +1173,7 @@ async def ensure_daily_participation(
             return # Quota full
 
     # 6. Create!
+    # 6. Create!
     join_code = generate_join_code()
     while await get_participation_by_join_code(db, join_code):
         join_code = generate_join_code()
@@ -1275,6 +1279,7 @@ async def pre_register_for_multi_day_event(
                 detail=f"คุณลงทะเบียนครบ {event.max_checkins_per_user} ครั้งแล้ว"
             )
 
+    today = datetime.now(timezone.utc).date()
     if today > event_end:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1301,6 +1306,20 @@ async def pre_register_for_multi_day_event(
 
     db.add(new_participation)
     await db.commit()
+    await db.refresh(new_participation)
+
+    await notification_crud.notify_event_joined(
+        db, user_id, event_id,
+        new_participation.id, event.title
+    )
+
+    return {
+        "success": True,
+        "message": "ลงทะเบียนสำเร็จ! ระบบจะสร้างรหัสอัตโนมัติทุกวัน",
+        "first_code": join_code,
+        "first_date": first_day,
+        "event_end_date": event_end
+    }
     await db.refresh(new_participation)
 
     await notification_crud.notify_event_joined(
