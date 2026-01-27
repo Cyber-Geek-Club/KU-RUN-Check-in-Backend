@@ -257,6 +257,9 @@ async def get_pre_registration_status(
     """
     📊 ตรวจสอบสถานะการลงทะเบียนล่วงหน้า
     """
+    # ✅ Fallback: Ensure today's code exists (Lazy Load)
+    await event_participation_crud.ensure_daily_participation(db, current_user.id, event_id)
+
     return await event_participation_crud.get_user_pre_registration_status(
         db, current_user.id, event_id
     )

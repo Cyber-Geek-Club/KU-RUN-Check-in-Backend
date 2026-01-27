@@ -1366,7 +1366,7 @@ async def get_user_pre_registration_status(
             "expired_codes": 0
         }
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(BANGKOK_TZ).date()
     active_codes = []
     used_codes = 0
     expired_codes = 0
