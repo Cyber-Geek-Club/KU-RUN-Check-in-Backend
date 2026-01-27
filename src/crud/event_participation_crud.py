@@ -518,18 +518,51 @@ async def get_user_statistics(db: AsyncSession, user_id: int) -> Dict:
     )
     total_events_completed = completed_result.scalar() or 0
 
-    # ... (ส่วนคำนวณ Distance คงเดิม) ...
+    # 3. Total Distance
+    # Calculate sum of actual_distance_km for all participations
+    distance_result = await db.execute(
+        select(func.sum(EventParticipation.actual_distance_km))
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.actual_distance_km != None
+        )
+    )
+    total_distance_km = distance_result.scalar() or Decimal('0.00')
 
     # 4. Completion Rate
     completion_rate = 0.0
     if total_events_joined > 0:
         completion_rate = round((total_events_completed / total_events_joined) * 100, 2)
 
+    # 5. Current Month Completions
+    # Count completions in the current month (based on checked_out_at or completed_at)
+    now_bkk = datetime.now(BANGKOK_TZ)
+    current_month = now_bkk.month
+    current_year = now_bkk.year
+    
+    # Use checked_out_at for completion time as it's set for both CHECKED_OUT and COMPLETED flows regarding completion time
+    month_completions_result = await db.execute(
+        select(func.count(EventParticipation.id))
+        .where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.status.in_([
+                ParticipationStatus.COMPLETED, 
+                ParticipationStatus.CHECKED_OUT
+            ]),
+            extract('month', EventParticipation.checked_out_at) == current_month,
+            extract('year', EventParticipation.checked_out_at) == current_year
+        )
+    )
+    
+    current_month_completions = month_completions_result.scalar() or 0
+
     return {
         "user_id": user_id,
         "total_events_joined": total_events_joined,
         "total_events_completed": total_events_completed,
-        # ...
+        "total_distance_km": total_distance_km,
+        "completion_rate": completion_rate,
+        "current_month_completions": current_month_completions
     }
 
 async def get_user_event_stats(
