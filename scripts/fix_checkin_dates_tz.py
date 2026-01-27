@@ -23,7 +23,7 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 BANGKOK_TZ = pytz.timezone('Asia/Bangkok')
 
 async def fix_checkin_dates():
-    print("🚀 Starting Data Migration: Fix Check-in Dates (Timezone Mismatch)")
+    print("[START] Starting Data Migration: Fix Check-in Dates (Timezone Mismatch)")
     
     async with AsyncSessionLocal() as db:
         try:
@@ -34,7 +34,7 @@ async def fix_checkin_dates():
             )
             participations = result.scalars().all()
             
-            print(f"📊 Found {len(participations)} participations to check.")
+            print(f"[INFO] Found {len(participations)} participations to check.")
             
             fix_count = 0
             
@@ -48,19 +48,19 @@ async def fix_checkin_dates():
                 
                 # Check mismatch
                 if p.checkin_date != correct_date:
-                    print(f"   ⚠️ ID {p.id} (User {p.user_id}): stored {p.checkin_date} != real {correct_date} (Joined {joined_at_bkk})")
+                    print(f"   [WARN] ID {p.id} (User {p.user_id}): stored {p.checkin_date} != real {correct_date} (Joined {joined_at_bkk})")
                     p.checkin_date = correct_date
                     fix_count += 1
             
             if fix_count > 0:
-                print(f"✅ Fixing {fix_count} records...")
+                print(f"[OK] Fixing {fix_count} records...")
                 await db.commit()
-                print("✅ Migration completed successfully.")
+                print("[OK] Migration completed successfully.")
             else:
-                print("✨ No issues found. All dates are correct.")
+                print("[OK] No issues found. All dates are correct.")
                 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"[ERROR] Error: {e}")
             await db.rollback()
 
 if __name__ == "__main__":
