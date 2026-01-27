@@ -1,5 +1,5 @@
 # src/models/event_participation.py
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Numeric, Date, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Numeric, Date, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone, date
 import enum
@@ -20,6 +20,9 @@ class ParticipationStatus(str, enum.Enum):
 
 class EventParticipation(Base):
     __tablename__ = "event_participations"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'event_id', 'checkin_date', name='uq_event_user_daily_checkin'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

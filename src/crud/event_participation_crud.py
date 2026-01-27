@@ -808,6 +808,7 @@ async def check_daily_registration_limit(
                     ])
                 )
             )
+            .order_by(EventParticipation.id.desc())  # ✅ Pick latest if duplicates exist
         )
         existing_today = today_registration_result.scalars().first()
 
