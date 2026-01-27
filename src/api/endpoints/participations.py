@@ -327,6 +327,9 @@ async def get_my_active_codes(
     """
     📱 ดูรหัสที่ยังใช้งานได้ของตัวเอง
     """
+    # ✅ Fallback: Ensure today's code exists (Lazy Load)
+    await event_participation_crud.ensure_daily_participation(db, current_user.id, event_id)
+
     result = await db.execute(
         select(EventParticipation)
         .where(

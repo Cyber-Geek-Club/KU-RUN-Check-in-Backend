@@ -1102,6 +1102,99 @@ async def check_out_participation(db: AsyncSession, join_code: str, staff_id: in
 # 🆕 Pre-registration Functions
 # ========================================
 
+async def ensure_daily_participation(
+        db: AsyncSession,
+        user_id: int,
+        event_id: int
+) -> None:
+    """
+    🛠️ Fallback: ตรวจสอบและสร้าง Participation ของวันนี้ (ถ้ายังไม่มี)
+    สำหรับกรณีที่ Scheduler ทำงานผิดพลาดหรือ User เพิ่งสมัคร
+    """
+    from src.models.event import Event
+
+    # 1. Check Event
+    event = await db.get(Event, event_id)
+    if not event or event.event_type != EventType.MULTI_DAY:
+        return
+
+    # 2. Check Date Range
+    now_bkk = datetime.now(BANGKOK_TZ)
+    today = now_bkk.date()
+    
+    event_start_dt = event.event_date.astimezone(BANGKOK_TZ) if event.event_date.tzinfo else event.event_date
+    event_end_dt = event.event_end_date.astimezone(BANGKOK_TZ) if event.event_end_date and event.event_end_date.tzinfo else event.event_end_date
+    start = event_start_dt.date()
+    end = event_end_dt.date() if event_end_dt else start
+
+    if not (start <= today <= end):
+        return
+
+    # 3. Check Pre-registration (Must have at least one record)
+    check_registered = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.event_id == event_id,
+            EventParticipation.status != ParticipationStatus.CANCELLED
+        ).limit(1)
+    )
+    if not check_registered.scalar_one_or_none():
+        return # Not registered yet
+
+    # 4. Check Today's Record
+    existing_today = await db.execute(
+        select(EventParticipation).where(
+            EventParticipation.user_id == user_id,
+            EventParticipation.event_id == event_id,
+            EventParticipation.checkin_date == today,
+            EventParticipation.status != ParticipationStatus.CANCELLED
+        )
+    )
+    if existing_today.scalar_one_or_none():
+        return # Already exists
+
+    # 5. Check Quota
+    if event.max_checkins_per_user:
+        count_result = await db.execute(
+            select(func.count(EventParticipation.id)).where(
+                EventParticipation.user_id == user_id,
+                EventParticipation.event_id == event_id,
+                EventParticipation.status.notin_([
+                    ParticipationStatus.EXPIRED,
+                    ParticipationStatus.CANCELLED
+                ])
+            )
+        )
+        usage = count_result.scalar() or 0
+        if usage >= event.max_checkins_per_user:
+            return # Quota full
+
+    # 6. Create!
+    join_code = generate_join_code()
+    while await get_participation_by_join_code(db, join_code):
+        join_code = generate_join_code()
+
+    code_expires_at = BANGKOK_TZ.localize(datetime.combine(today, datetime.max.time()))
+
+    new_p = EventParticipation(
+        user_id=user_id,
+        event_id=event_id,
+        join_code=join_code,
+        status=ParticipationStatus.JOINED,
+        checkin_date=today,
+        code_used=False,
+        code_expires_at=code_expires_at,
+        joined_at=datetime.now(timezone.utc)
+    )
+    db.add(new_p)
+    try:
+        await db.commit()
+        await db.refresh(new_p)
+    except Exception as e:
+        await db.rollback()
+        # Might race with scheduler, ignore unique constraint error
+        pass
+
 async def pre_register_for_multi_day_event(
         db: AsyncSession,
         user_id: int,
