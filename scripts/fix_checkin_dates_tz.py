@@ -11,7 +11,8 @@ from sqlalchemy.orm import sessionmaker
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from src.database.db_config import DATABASE_URL, Base
+from src.database.db_config import DATABASE_URL
+from src.models.base import Base
 from src.models.event_participation import EventParticipation, ParticipationStatus
 from src.models.event import Event
 
